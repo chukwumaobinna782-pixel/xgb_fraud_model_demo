@@ -15,18 +15,11 @@ st.title("🛡️ XGBoost Fraud Detection Model Demo")
 # Load model and features
 @st.cache_resource
 def load_model():
-    # This stays the same — safe and reliable
     features = joblib.load('feature_names.joblib')
-    
-    # Load the JSON model
-    model = xgb.XGBClassifier(
-        enable_categorical=True,
-        tree_method='hist'  # match your training settings
-        # Add other params if you used them, e.g., max_depth, etc. — but not required for loading
-    )
+    model = xgb.XGBClassifier(enable_categorical=True, tree_method='hist')
     model.load_model('xgboost_fraud_model.json')
-    
     return model, features
+    
 # Preprocessing function (same as training)
 def preprocess_df(df_raw):
     df = df_raw.copy()
