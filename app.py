@@ -81,10 +81,14 @@ def predict_fraud(df_raw):
         # Ultimate fix: Round probability to 4 decimals FIRST, then make decision on rounded value
     df_processed['fraud_proba_rounded'] = df_processed['fraud_proba'].round(4)  # Matches display rounding
     
-    def get_decision(rounded_prob):
-        if rounded_prob <= 0.10:
+        # FINAL FIX: Force decision based on DISPLAYED rounded percentage
+    # Round to 2 decimal places in percentage terms (equivalent to round(4) on decimal)
+    df_processed['fraud_proba_rounded'] = (df_processed['fraud_proba'] * 100).round(2) / 100  # Ensures exact 0.11, 0.73, etc.
+    
+    def get_decision(prob):
+        if prob <= 0.10:
             return "Approved"
-        elif 0.11 <= rounded_prob <= 0.49:
+        elif prob <= 0.49:
             return "Review"
         else:
             return "Flagged"
@@ -209,7 +213,7 @@ if mode == "Live Demo (Simulate Transactions)":
 
             # Table
             display_df = df_result[['customer_id', 'trans_ts', 'amount_usd', 'dist_to_home_km', 'ip_country', 'fraud_proba', 'decision']].copy()
-            display_df['fraud_proba'] = display_df['fraud_proba'].round(4).map('{:.2%}'.format)
+            display_df['fraud_proba'] = df_result['fraud_proba_rounded'].map('{:.2%}'.format)
             display_df['trans_ts'] = display_df['trans_ts'].dt.strftime('%Y-%m-%d %H:%M:%S')
 
             st.subheader("Transaction Decisions")
@@ -254,7 +258,7 @@ else:  # Upload mode
 
                         # Table
                         display_df = df_result[['customer_id', 'trans_ts', 'amount_usd', 'dist_to_home_km', 'ip_country', 'fraud_proba', 'decision']].copy()
-                        display_df['fraud_proba'] = display_df['fraud_proba'].round(4).map('{:.2%}'.format)
+                        display_df['fraud_proba'] = df_result['fraud_proba_rounded'].map('{:.2%}'.format)
                         display_df['trans_ts'] = display_df['trans_ts'].dt.strftime('%Y-%m-%d %H:%M:%S')
 
                         st.subheader("Transaction Decisions")
