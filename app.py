@@ -68,7 +68,7 @@ def preprocess_df(df_raw):
     X = df[all_features]
     return X, df
 
-# Prediction function with correct decision logic
+# Prediction function with corrected decision logic
 def predict_fraud(df_raw):
     X, df_processed = preprocess_df(df_raw)
     y_prob = model.predict_proba(X)[:, 1]
@@ -77,14 +77,10 @@ def predict_fraud(df_raw):
     df_processed['fraud_proba'] = y_prob
     df_processed['is_fraud'] = y_pred
     
-        # Decision logic - strictly by percentage ranges
-        # Ultimate fix: Round probability to 4 decimals FIRST, then make decision on rounded value
-    df_processed['fraud_proba_rounded'] = df_processed['fraud_proba'].round(4)  # Matches display rounding
+    # Create rounded probability for consistent decision and display
+    df_processed['fraud_proba_rounded'] = df_processed['fraud_proba'].round(4)
     
-        # FINAL FIX: Force decision based on DISPLAYED rounded percentage
-    # Round to 2 decimal places in percentage terms (equivalent to round(4) on decimal)
-    df_processed['fraud_proba_rounded'] = (df_processed['fraud_proba'] * 100).round(2) / 100  # Ensures exact 0.11, 0.73, etc.
-    
+    # Decision based on rounded probability (matches displayed value exactly)
     def get_decision(prob):
         if prob <= 0.10:
             return "Approved"
@@ -94,6 +90,7 @@ def predict_fraud(df_raw):
             return "Flagged"
     
     df_processed['decision'] = df_processed['fraud_proba_rounded'].apply(get_decision)
+    
     return df_processed
 
 # Sample CSV template
@@ -211,9 +208,10 @@ if mode == "Live Demo (Simulate Transactions)":
             # Legend
             show_decision_legend()
 
-            # Table
-            display_df = df_result[['customer_id', 'trans_ts', 'amount_usd', 'dist_to_home_km', 'ip_country', 'fraud_proba', 'decision']].copy()
-            display_df['fraud_proba'] = display_df['fraud_proba'].round(4).map('{:.2%}'.format)
+            # Table - use rounded probability for display
+            display_df = df_result[['customer_id', 'trans_ts', 'amount_usd', 'dist_to_home_km', 'ip_country', 'fraud_proba_rounded', 'decision']].copy()
+            display_df = display_df.rename(columns={'fraud_proba_rounded': 'fraud_proba'})
+            display_df['fraud_proba'] = display_df['fraud_proba'].map('{:.2%}'.format)
             display_df['trans_ts'] = display_df['trans_ts'].dt.strftime('%Y-%m-%d %H:%M:%S')
 
             st.subheader("Transaction Decisions")
@@ -256,9 +254,10 @@ else:  # Upload mode
                         # Legend
                         show_decision_legend()
 
-                        # Table
-                        display_df = df_result[['customer_id', 'trans_ts', 'amount_usd', 'dist_to_home_km', 'ip_country', 'fraud_proba', 'decision']].copy()
-                        display_df['fraud_proba'] = display_df['fraud_proba'].round(4).map('{:.2%}'.format)
+                        # Table - use rounded probability for display
+                        display_df = df_result[['customer_id', 'trans_ts', 'amount_usd', 'dist_to_home_km', 'ip_country', 'fraud_proba_rounded', 'decision']].copy()
+                        display_df = display_df.rename(columns={'fraud_proba_rounded': 'fraud_proba'})
+                        display_df['fraud_proba'] = display_df['fraud_proba'].map('{:.2%}'.format)
                         display_df['trans_ts'] = display_df['trans_ts'].dt.strftime('%Y-%m-%d %H:%M:%S')
 
                         st.subheader("Transaction Decisions")
