@@ -8,6 +8,7 @@ from datetime import datetime, timedelta
 import warnings
 warnings.filterwarnings('ignore')
 
+# Page config
 st.set_page_config(page_title="Fraud Detection Demo", layout="wide")
 st.title("🛡️ XGBoost Fraud Detection Model Demo")
 
@@ -67,7 +68,7 @@ def preprocess_df(df_raw):
     X = df[all_features]
     return X, df
 
-# Prediction function
+# Prediction function with correct decision logic
 def predict_fraud(df_raw):
     X, df_processed = preprocess_df(df_raw)
     y_prob = model.predict_proba(X)[:, 1]
@@ -76,16 +77,17 @@ def predict_fraud(df_raw):
     df_processed['fraud_proba'] = y_prob
     df_processed['is_fraud'] = y_pred
     
-    # Add decision logic
+    # Decision logic
     def get_decision(prob):
-      if prob <= 0.10:
-        return "Approved"
-      elif prob < 0.50:
-        return "Review"
-      else:
-        return "Flagged"
-
+        if prob <= 0.10:
+            return "Approved"
+        elif prob < 0.50:
+            return "Review"
+        else:
+            return "Flagged"
+    
     df_processed['decision'] = df_processed['fraud_proba'].apply(get_decision)
+    
     return df_processed
 
 # Sample CSV template
@@ -104,6 +106,43 @@ def get_sample_csv():
     })
     sample_data['trans_ts'] = pd.to_datetime(sample_data['trans_ts'])
     return sample_data
+
+# Decision badge styling
+def highlight_decision(val):
+    if val == "Approved":
+        bg = "#d4edda"
+        color = "#155724"
+    elif val == "Review":
+        bg = "#fff3cd"
+        color = "#856404"
+    else:  # Flagged
+        bg = "#f8d7da"
+        color = "#721c24"
+    return f'background-color: {bg}; color: {color}; padding: 8px 12px; border-radius: 12px; font-weight: bold; text-align: center;'
+
+# Decision Legend (reusable)
+def show_decision_legend():
+    st.markdown("### 📊 Decision Legend")
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        st.markdown("""
+        <div style="background-color: #d4edda; color: #155724; padding: 12px; border-radius: 12px; font-weight: bold; text-align: center; border: 1px solid #c3e6cb;">
+        ✅ Approved<br><small>Fraud Probability: 0.00 – 0.10</small>
+        </div>
+        """, unsafe_allow_html=True)
+    with col2:
+        st.markdown("""
+        <div style="background-color: #fff3cd; color: #856404; padding: 12px; border-radius: 12px; font-weight: bold; text-align: center; border: 1px solid #ffeaa7;">
+        ⚠️ Review<br><small>Fraud Probability: 0.11 – 0.49</small>
+        </div>
+        """, unsafe_allow_html=True)
+    with col3:
+        st.markdown("""
+        <div style="background-color: #f8d7da; color: #721c24; padding: 12px; border-radius: 12px; font-weight: bold; text-align: center; border: 1px solid #f5c6cb;">
+        🔴 Flagged<br><small>Fraud Probability: ≥ 0.50</small>
+        </div>
+        """, unsafe_allow_html=True)
+    st.markdown("<br>", unsafe_allow_html=True)
 
 # UI
 st.info("""
@@ -132,7 +171,6 @@ if mode == "Live Demo (Simulate Transactions)":
 
     if st.button("Generate & Predict Simulated Transactions"):
         with st.spinner("Generating and predicting..."):
-            # Realistic simulation
             customer_ids = np.random.choice([f"cust_{i:04d}" for i in range(1, 21)], num_tx)
             base_time = datetime(2025, 1, 1)
             trans_ts = sorted(base_time + timedelta(minutes=np.random.exponential(30)) for _ in range(num_tx))
@@ -154,10 +192,9 @@ if mode == "Live Demo (Simulate Transactions)":
             df_result = predict_fraud(df_sim)
 
             # Metrics
-            fraud_count = df_result['is_fraud'].sum()
-            flagged_count = (df_result['decision'] == 'Flagged').sum()
-            review_count = (df_result['decision'] == 'Review').sum()
             approved_count = (df_result['decision'] == 'Approved').sum()
+            review_count = (df_result['decision'] == 'Review').sum()
+            flagged_count = (df_result['decision'] == 'Flagged').sum()
 
             col1, col2, col3, col4 = st.columns(4)
             col1.metric("Total Transactions", len(df_result))
@@ -165,60 +202,23 @@ if mode == "Live Demo (Simulate Transactions)":
             col3.metric("⚠️ Review", review_count)
             col4.metric("🔴 Flagged", flagged_count)
 
-            # Add this legend block (same for both modes)
+            # Legend
+            show_decision_legend()
 
-st.markdown("### 📊 Decision Legend")
-col_leg1, col_leg2, col_leg3 = st.columns(3)
-
-with col_leg1:
-    st.markdown("""
-    <div style="background-color: #d4edda; color: #155724; padding: 10px 15px; border-radius: 12px; font-weight: bold; text-align: center; border: 1px solid #c3e6cb;">
-    ✅ Approved<br>
-    <small>Fraud Probability: 0.00 – 0.10</small>
-    </div>
-    """, unsafe_allow_html=True)
-
-with col_leg2:
-    st.markdown("""
-    <div style="background-color: #fff3cd; color: #856404; padding: 10px 15px; border-radius: 12px; font-weight: bold; text-align: center; border: 1px solid #ffeaa7;">
-    ⚠️ Review<br>
-    <small>Fraud Probability: 0.11 – 0.49</small>
-    </div>
-    """, unsafe_allow_html=True)
-
-with col_leg3:
-    st.markdown("""
-    <div style="background-color: #f8d7da; color: #721c24; padding: 10px 15px; border-radius: 12px; font-weight: bold; text-align: center; border: 1px solid #f5c6cb;">
-    🔴 Flagged<br>
-    <small>Fraud Probability: ≥ 0.50</small>
-    </div>
-    """, unsafe_allow_html=True)
-
-st.markdown("<br>", unsafe_allow_html=True)  # Small spacing
-
-            # Styled table with colored decision badges
+            # Table
             display_df = df_result[['customer_id', 'trans_ts', 'amount_usd', 'dist_to_home_km', 'ip_country', 'fraud_proba', 'decision']].copy()
             display_df['fraud_proba'] = display_df['fraud_proba'].round(4).map('{:.2%}'.format)
-            display_df['trans_ts'] = display_df['trans_ts'].dt.strftime('%Y-%m-%d %H:%M')
+            display_df['trans_ts'] = display_df['trans_ts'].dt.strftime('%Y-%m-%d %H:%M:%S')
 
-            def color_decision(decision):
-                if decision == "Approved":
-                    return "background-color: #d4edda; color: #155724; padding: 5px 10px; border-radius: 12px; font-weight: bold;"
-                elif decision == "Review":
-                    return "background-color: #fff3cd; color: #856404; padding: 5px 10px; border-radius: 12px; font-weight: bold;"
-                else:  # Flagged
-                    return "background-color: #f8d7da; color: #721c24; padding: 5px 10px; border-radius: 12px; font-weight: bold;"
-
-            styled_df = display_df.style.applymap(color_decision, subset=['decision'])
             st.subheader("Transaction Decisions")
+            styled_df = display_df.style.applymap(highlight_decision, subset=['decision'])
             st.dataframe(styled_df, use_container_width=True)
 
             # Download
             csv = df_result.to_csv(index=False).encode('utf-8')
             st.download_button("📥 Download Full Results", csv, "simulated_predictions.csv", "text/csv")
 
-else:
-    # Upload mode (unchanged except for decision column)
+else:  # Upload mode
     st.header("📂 Upload Your Own Transaction CSV")
     uploaded_file = st.file_uploader("Choose a CSV file", type=["csv"])
 
@@ -228,70 +228,41 @@ else:
             df_upload['trans_ts'] = pd.to_datetime(df_upload['trans_ts'], errors='coerce')
 
             if df_upload['trans_ts'].isna().any():
-                st.error("Some dates could not be parsed.")
+                st.error("Some trans_ts values could not be parsed as dates. Please check the format.")
             else:
-                st.success(f"Loaded {len(df_upload)} transactions.")
-                if st.button("Run Fraud Detection"):
-                    with st.spinner("Predicting..."):
+                st.success(f"✅ Loaded {len(df_upload)} transactions.")
+                st.dataframe(df_upload.head(10))
+
+                if st.button("🔍 Run Fraud Detection"):
+                    with st.spinner("Processing and predicting..."):
                         df_result = predict_fraud(df_upload)
 
-                        approved = (df_result['decision'] == 'Approved').sum()
-                        review = (df_result['decision'] == 'Review').sum()
-                        flagged = (df_result['decision'] == 'Flagged').sum()
+                        approved_count = (df_result['decision'] == 'Approved').sum()
+                        review_count = (df_result['decision'] == 'Review').sum()
+                        flagged_count = (df_result['decision'] == 'Flagged').sum()
 
                         col1, col2, col3, col4 = st.columns(4)
-                        col1.metric("Total", len(df_result))
-                        col2.metric("✅ Approved", approved)
-                        col3.metric("⚠️ Review", review)
-                        col4.metric("🔴 Flagged", flagged)
+                        col1.metric("Total Transactions", len(df_result))
+                        col2.metric("✅ Approved", approved_count)
+                        col3.metric("⚠️ Review", review_count)
+                        col4.metric("🔴 Flagged", flagged_count)
 
-                        # Add this legend block (same for both modes)
+                        # Legend
+                        show_decision_legend()
 
-st.markdown("### 📊 Decision Legend")
-col_leg1, col_leg2, col_leg3 = st.columns(3)
-
-with col_leg1:
-    st.markdown("""
-    <div style="background-color: #d4edda; color: #155724; padding: 10px 15px; border-radius: 12px; font-weight: bold; text-align: center; border: 1px solid #c3e6cb;">
-    ✅ Approved<br>
-    <small>Fraud Probability: 0.00 – 0.10</small>
-    </div>
-    """, unsafe_allow_html=True)
-
-with col_leg2:
-    st.markdown("""
-    <div style="background-color: #fff3cd; color: #856404; padding: 10px 15px; border-radius: 12px; font-weight: bold; text-align: center; border: 1px solid #ffeaa7;">
-    ⚠️ Review<br>
-    <small>Fraud Probability: 0.11 – 0.49</small>
-    </div>
-    """, unsafe_allow_html=True)
-
-with col_leg3:
-    st.markdown("""
-    <div style="background-color: #f8d7da; color: #721c24; padding: 10px 15px; border-radius: 12px; font-weight: bold; text-align: center; border: 1px solid #f5c6cb;">
-    🔴 Flagged<br>
-    <small>Fraud Probability: ≥ 0.50</small>
-    </div>
-    """, unsafe_allow_html=True)
-
-st.markdown("<br>", unsafe_allow_html=True)  # Small spacing
-
+                        # Table
                         display_df = df_result[['customer_id', 'trans_ts', 'amount_usd', 'dist_to_home_km', 'ip_country', 'fraud_proba', 'decision']].copy()
                         display_df['fraud_proba'] = display_df['fraud_proba'].round(4).map('{:.2%}'.format)
-                        display_df['trans_ts'] = display_df['trans_ts'].dt.strftime('%Y-%m-%d %H:%M')
-
-                        styled_df = display_df.style.applymap(
-                            lambda x: "background-color: #d4edda; color: #155724; padding: 5px 10px; border-radius: 12px; font-weight: bold;" if x == "Approved"
-                            else "background-color: #fff3cd; color: #856404; padding: 5px 10px; border-radius: 12px; font-weight: bold;" if x == "Review"
-                            else "background-color: #f8d7da; color: #721c24; padding: 5px 10px; border-radius: 12px; font-weight: bold;" 
-                            , subset=['decision']
-                        )
+                        display_df['trans_ts'] = display_df['trans_ts'].dt.strftime('%Y-%m-%d %H:%M:%S')
 
                         st.subheader("Transaction Decisions")
+                        styled_df = display_df.style.applymap(highlight_decision, subset=['decision'])
                         st.dataframe(styled_df, use_container_width=True)
 
+                        # Download
                         csv = df_result.to_csv(index=False).encode('utf-8')
-                        st.download_button("📥 Download Results", csv, "batch_predictions.csv", "text/csv")
+                        st.download_button("📥 Download Results with Predictions", csv, "batch_fraud_predictions.csv", "text/csv")
 
         except Exception as e:
-            st.error(f"Error: {e}")
+            st.error(f"Error reading file: {str(e)}")
+            st.info("Ensure your CSV has all required columns and correct data types.")
