@@ -78,14 +78,14 @@ def predict_fraud(df_raw):
     
     # Add decision logic
     def get_decision(prob):
-    if prob <= 0.10:
+      if prob <= 0.10:
         return "Approved"
-    elif prob < 0.50:
+      elif prob < 0.50:
         return "Review"
-    else:
+      else:
         return "Flagged"
 
-df_processed['decision'] = df_processed['fraud_proba'].apply(get_decision)
+    df_processed['decision'] = df_processed['fraud_proba'].apply(get_decision)
     return df_processed
 
 # Sample CSV template
