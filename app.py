@@ -77,17 +77,16 @@ def predict_fraud(df_raw):
     df_processed['fraud_proba'] = y_prob
     df_processed['is_fraud'] = y_pred
     
-    # Decision logic
+        # Decision logic - strictly by percentage ranges
     def get_decision(prob):
-        if prob <= 0.10:
+        if 0.00 <= prob <= 0.10:
             return "Approved"
-        elif prob < 0.50:
+        elif 0.11 <= prob <= 0.49:
             return "Review"
         else:
             return "Flagged"
     
     df_processed['decision'] = df_processed['fraud_proba'].apply(get_decision)
-    
     return df_processed
 
 # Sample CSV template
@@ -127,19 +126,19 @@ def show_decision_legend():
     with col1:
         st.markdown("""
         <div style="background-color: #d4edda; color: #155724; padding: 12px; border-radius: 12px; font-weight: bold; text-align: center; border: 1px solid #c3e6cb;">
-        ✅ Approved<br><small>Fraud Probability: 0.00 – 0.10</small>
+        ✅ Approved<br><small>Fraud Probability: 0.00% – 0.10%</small>
         </div>
         """, unsafe_allow_html=True)
     with col2:
         st.markdown("""
         <div style="background-color: #fff3cd; color: #856404; padding: 12px; border-radius: 12px; font-weight: bold; text-align: center; border: 1px solid #ffeaa7;">
-        ⚠️ Review<br><small>Fraud Probability: 0.11 – 0.49</small>
+        ⚠️ Review<br><small>Fraud Probability: 0.11% – 0.49%</small>
         </div>
         """, unsafe_allow_html=True)
     with col3:
         st.markdown("""
         <div style="background-color: #f8d7da; color: #721c24; padding: 12px; border-radius: 12px; font-weight: bold; text-align: center; border: 1px solid #f5c6cb;">
-        🔴 Flagged<br><small>Fraud Probability: ≥ 0.50</small>
+        🔴 Flagged<br><small>Fraud Probability: ≥ 0.50%</small>
         </div>
         """, unsafe_allow_html=True)
     st.markdown("<br>", unsafe_allow_html=True)
