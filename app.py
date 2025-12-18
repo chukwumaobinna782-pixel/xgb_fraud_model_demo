@@ -213,7 +213,7 @@ if mode == "Live Demo (Simulate Transactions)":
 
             # Table
             display_df = df_result[['customer_id', 'trans_ts', 'amount_usd', 'dist_to_home_km', 'ip_country', 'fraud_proba', 'decision']].copy()
-            display_df['fraud_proba'] = df_result['fraud_proba_rounded'].map('{:.2%}'.format)
+            display_df['fraud_proba'] = display_df['fraud_proba'].round(4).map('{:.2%}'.format)
             display_df['trans_ts'] = display_df['trans_ts'].dt.strftime('%Y-%m-%d %H:%M:%S')
 
             st.subheader("Transaction Decisions")
@@ -258,7 +258,7 @@ else:  # Upload mode
 
                         # Table
                         display_df = df_result[['customer_id', 'trans_ts', 'amount_usd', 'dist_to_home_km', 'ip_country', 'fraud_proba', 'decision']].copy()
-                        display_df['fraud_proba'] = df_result['fraud_proba_rounded'].map('{:.2%}'.format)
+                        display_df['fraud_proba'] = display_df['fraud_proba'].round(4).map('{:.2%}'.format)
                         display_df['trans_ts'] = display_df['trans_ts'].dt.strftime('%Y-%m-%d %H:%M:%S')
 
                         st.subheader("Transaction Decisions")
