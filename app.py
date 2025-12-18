@@ -19,7 +19,8 @@ def load_model():
     model = xgb.XGBClassifier(enable_categorical=True, tree_method='hist')
     model.load_model('xgboost_fraud_model.json')
     return model, features
-    model, features = load_model()
+model, features = load_model()
+    
 # Preprocessing function (same as training)
 def preprocess_df(df_raw):
     df = df_raw.copy()
