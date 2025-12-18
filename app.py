@@ -165,6 +165,37 @@ if mode == "Live Demo (Simulate Transactions)":
             col3.metric("⚠️ Review", review_count)
             col4.metric("🔴 Flagged", flagged_count)
 
+            # Add this legend block (same for both modes)
+
+st.markdown("### 📊 Decision Legend")
+col_leg1, col_leg2, col_leg3 = st.columns(3)
+
+with col_leg1:
+    st.markdown("""
+    <div style="background-color: #d4edda; color: #155724; padding: 10px 15px; border-radius: 12px; font-weight: bold; text-align: center; border: 1px solid #c3e6cb;">
+    ✅ Approved<br>
+    <small>Fraud Probability: 0.00 – 0.10</small>
+    </div>
+    """, unsafe_allow_html=True)
+
+with col_leg2:
+    st.markdown("""
+    <div style="background-color: #fff3cd; color: #856404; padding: 10px 15px; border-radius: 12px; font-weight: bold; text-align: center; border: 1px solid #ffeaa7;">
+    ⚠️ Review<br>
+    <small>Fraud Probability: 0.11 – 0.49</small>
+    </div>
+    """, unsafe_allow_html=True)
+
+with col_leg3:
+    st.markdown("""
+    <div style="background-color: #f8d7da; color: #721c24; padding: 10px 15px; border-radius: 12px; font-weight: bold; text-align: center; border: 1px solid #f5c6cb;">
+    🔴 Flagged<br>
+    <small>Fraud Probability: ≥ 0.50</small>
+    </div>
+    """, unsafe_allow_html=True)
+
+st.markdown("<br>", unsafe_allow_html=True)  # Small spacing
+
             # Styled table with colored decision badges
             display_df = df_result[['customer_id', 'trans_ts', 'amount_usd', 'dist_to_home_km', 'ip_country', 'fraud_proba', 'decision']].copy()
             display_df['fraud_proba'] = display_df['fraud_proba'].round(4).map('{:.2%}'.format)
@@ -213,6 +244,37 @@ else:
                         col2.metric("✅ Approved", approved)
                         col3.metric("⚠️ Review", review)
                         col4.metric("🔴 Flagged", flagged)
+
+                        # Add this legend block (same for both modes)
+
+st.markdown("### 📊 Decision Legend")
+col_leg1, col_leg2, col_leg3 = st.columns(3)
+
+with col_leg1:
+    st.markdown("""
+    <div style="background-color: #d4edda; color: #155724; padding: 10px 15px; border-radius: 12px; font-weight: bold; text-align: center; border: 1px solid #c3e6cb;">
+    ✅ Approved<br>
+    <small>Fraud Probability: 0.00 – 0.10</small>
+    </div>
+    """, unsafe_allow_html=True)
+
+with col_leg2:
+    st.markdown("""
+    <div style="background-color: #fff3cd; color: #856404; padding: 10px 15px; border-radius: 12px; font-weight: bold; text-align: center; border: 1px solid #ffeaa7;">
+    ⚠️ Review<br>
+    <small>Fraud Probability: 0.11 – 0.49</small>
+    </div>
+    """, unsafe_allow_html=True)
+
+with col_leg3:
+    st.markdown("""
+    <div style="background-color: #f8d7da; color: #721c24; padding: 10px 15px; border-radius: 12px; font-weight: bold; text-align: center; border: 1px solid #f5c6cb;">
+    🔴 Flagged<br>
+    <small>Fraud Probability: ≥ 0.50</small>
+    </div>
+    """, unsafe_allow_html=True)
+
+st.markdown("<br>", unsafe_allow_html=True)  # Small spacing
 
                         display_df = df_result[['customer_id', 'trans_ts', 'amount_usd', 'dist_to_home_km', 'ip_country', 'fraud_proba', 'decision']].copy()
                         display_df['fraud_proba'] = display_df['fraud_proba'].round(4).map('{:.2%}'.format)
