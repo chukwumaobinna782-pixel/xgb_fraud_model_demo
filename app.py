@@ -78,15 +78,18 @@ def predict_fraud(df_raw):
     df_processed['is_fraud'] = y_pred
     
         # Decision logic - strictly by percentage ranges
-    def get_decision(prob):
-        if 0.00 <= prob <= 0.10:
+        # Ultimate fix: Round probability to 4 decimals FIRST, then make decision on rounded value
+    df_processed['fraud_proba_rounded'] = df_processed['fraud_proba'].round(4)  # Matches display rounding
+    
+    def get_decision(rounded_prob):
+        if rounded_prob <= 0.10:
             return "Approved"
-        elif 0.11 <= prob <= 0.49:
+        elif 0.11 <= rounded_prob <= 0.49:
             return "Review"
         else:
             return "Flagged"
     
-    df_processed['decision'] = df_processed['fraud_proba'].apply(get_decision)
+    df_processed['decision'] = df_processed['fraud_proba_rounded'].apply(get_decision)
     return df_processed
 
 # Sample CSV template
