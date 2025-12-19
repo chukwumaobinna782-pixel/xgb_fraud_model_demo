@@ -3,50 +3,88 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import xgboost as xgb
-import joblib
+import json
 from datetime import datetime, timedelta
 import warnings
 warnings.filterwarnings('ignore')
 
-# Page config
+# -------------------------------
+# Page Config
+# -------------------------------
 st.set_page_config(page_title="Fraud Detection Demo", layout="wide")
 st.title("🛡️ XGBoost Fraud Detection Model Demo")
+st.markdown("Real-time fraud risk scoring with explainable decisions using a 0–999 risk score.")
 
-# Load model safely
+# -------------------------------
+# Load Model & Config
+# -------------------------------
 @st.cache_resource
-def load_model():
-    features = joblib.load('feature_names.joblib')
-    model = xgb.XGBClassifier(enable_categorical=True, tree_method='hist')
-    model.load_model('xgboost_fraud_model.json')
-    return model, features
+def load_model_and_config():
+    try:
+        # Load model (XGBoost JSON format)
+        model = xgb.XGBClassifier(enable_categorical=True, tree_method='hist')
+        model.load_model('fraud_detection_model.json')  # renamed to match training
 
-try:
-    model, features = load_model()
-except Exception as e:
-    st.error("🚨 Failed to load the fraud detection model.")
-    st.error(f"Error: {str(e)}")
-    st.stop()
+        # Load human-readable config
+        with open('model_config.json', 'r') as f:
+            config = json.load(f)
 
-# Preprocessing function
+        features = config['features_used']
+        thresholds = config['action_thresholds']
+        multiplier = config['risk_score_multiplier']
+        version = config.get('model_version', 'Unknown')
+        trained_date = config.get('trained_date', 'Unknown')
+
+        st.sidebar.success(f"✅ Model {version} loaded")
+        st.sidebar.caption(f"Trained: {trained_date.split('T')[0]}")
+
+        return model, config, features, thresholds, multiplier
+    except Exception as e:
+        st.error("🚨 Failed to load model or config.")
+        st.error(f"Error: {str(e)}")
+        st.stop()
+
+model, config, features, thresholds, multiplier = load_model_and_config()
+
+# -------------------------------
+# SHAP Explainer (cached for speed)
+# -------------------------------
+import shap
+
+@st.cache_resource
+def get_shap_explainer():
+    explainer = shap.TreeExplainer(model)
+    return explainer
+
+explainer = get_shap_explainer()
+
+# -------------------------------
+# Preprocessing Function
+# -------------------------------
 def preprocess_df(df_raw):
     df = df_raw.copy()
-    
+
+    # Basic signals
     df['card_present'] = df['card_present'].astype(int)
     df['foreign_ip'] = (df['ip_country'] != 'US').astype(int)
     df['risky_ip_country'] = df['ip_country'].isin(['RU', 'CN', 'KP', 'IR', 'VE']).astype(int)
     df['uncommon_os'] = df['device_os'].isin(['Linux', 'ChromeOS']).astype(int)
 
+    # Time features
     df['hour_of_day'] = df['trans_ts'].dt.hour
     df['day_of_week'] = df['trans_ts'].dt.day_of_week
     df['weekend'] = (df['day_of_week'] >= 5).astype(int)
 
+    # Categorical columns → category dtype for XGBoost
     cat_cols = ['merchant_category', 'device_os', 'device_lang', 'ip_country', 'ip_isp']
     for col in cat_cols:
         if col in df.columns:
             df[col] = df[col].astype('category')
 
+    # Sort for correct historical features
     df = df.sort_values(['customer_id', 'trans_ts']).reset_index(drop=True)
 
+    # Velocity & history
     df['cust_prev_tx'] = df.groupby('customer_id').cumcount()
     df['time_since_prev_tx_sec'] = df.groupby('customer_id')['trans_ts'].diff().dt.total_seconds().fillna(1e9)
     df['very_quick_succession'] = (df['time_since_prev_tx_sec'] < 300).astype(int)
@@ -57,43 +95,100 @@ def preprocess_df(df_raw):
     )
     df['amount_to_hist_avg_ratio'] = df['amount_usd'] / (df['cust_hist_avg_amount'] + 1)
 
-    all_features = [
-        'amount_usd', 'dist_to_home_km',
-        'card_present', 'foreign_ip', 'risky_ip_country', 'uncommon_os',
-        'hour_of_day', 'day_of_week', 'weekend',
-        'merchant_category', 'device_os', 'device_lang', 'ip_country', 'ip_isp',
-        'cust_prev_tx', 'time_since_prev_tx_sec', 'very_quick_succession', 'amount_to_hist_avg_ratio'
-    ]
-
-    X = df[all_features]
+    # Ensure exact feature order
+    X = df[features]
     return X, df
 
-# Prediction function
+# -------------------------------
+# Prediction + Risk Score + Action + SHAP
+# -------------------------------
 def predict_fraud(df_raw):
     X, df_processed = preprocess_df(df_raw)
-    y_prob = model.predict_proba(X)[:, 1]
-    y_pred = model.predict(X)
-    
-    df_processed['fraud_proba'] = y_prob
-    df_processed['is_fraud'] = y_pred
-    
-    # Create rounded probability for consistent decision and display
-    df_processed['fraud_proba_rounded'] = df_processed['fraud_proba'].round(4)
-    
-    # Decision based on rounded probability
-    def get_decision(prob):
-        if prob <= 0.10:
-            return "Approved"
-        elif prob <= 0.49:
-            return "Review"
+
+    # Probabilities
+    prob = model.predict_proba(X)[:, 1]
+
+    # Risk Score (0–999)
+    risk_score = (prob * multiplier).round().astype(int)
+
+    # Action based on thresholds from config
+    def get_action(score):
+        if score <= thresholds['auto_approve']:
+            return "Auto-Approve"
+        elif score <= thresholds['monitor']:
+            return "Low Risk - Monitor"
+        elif score <= thresholds['manual_review']:
+            return "Manual Review"
+        elif score <= thresholds['high_priority']:
+            return "High Priority Review"
         else:
-            return "Flagged"
-    
-    df_processed['decision'] = df_processed['fraud_proba_rounded'].apply(get_decision)
-    
+            return "Auto-Decline"
+
+    actions = [get_action(s) for s in risk_score]
+
+    # SHAP values for explanations (top 3 features per row)
+    shap_values = explainer.shap_values(X)
+    shap_df = pd.DataFrame(shap_values, columns=features)
+
+    def get_top_reasons(row_idx, top_n=3):
+        contributions = shap_df.iloc[row_idx].abs().sort_values(ascending=False)
+        top_features = contributions.index[:top_n]
+        reasons = []
+        for feat in top_features:
+            val = X.iloc[row_idx][feat]
+            impact = shap_df.iloc[row_idx][feat]
+            direction = "increases" if impact > 0 else "decreases"
+            reasons.append(f"• **{feat}** = {val} → {direction} risk by {abs(impact):.1f}")
+        return "\n".join(reasons)
+
+    top_reasons = [get_top_reasons(i) for i in range(len(df_processed))]
+
+    # Add results
+    df_processed['fraud_probability'] = prob
+    df_processed['risk_score'] = risk_score
+    df_processed['decision'] = actions
+    df_processed['explanation'] = top_reasons
+
     return df_processed
 
-# Sample CSV template
+# -------------------------------
+# Action Badge Styling
+# -------------------------------
+def highlight_action(val):
+    color_map = {
+        "Auto-Approve": ("#d4edda", "#155724"),
+        "Low Risk - Monitor": ("#e7f5ff", "#0c5460"),
+        "Manual Review": ("#fff3cd", "#856404"),
+        "High Priority Review": ("#f8d7da", "#721c24"),
+        "Auto-Decline": ("#f5c6cb", "#721c24")
+    }
+    bg, text = color_map.get(val, ("#f8f9fa", "#495057"))
+    return f'background-color: {bg}; color: {text}; padding: 10px 16px; border-radius: 12px; font-weight: bold; text-align: center;'
+
+# -------------------------------
+# Decision Legend (Updated for Risk Score)
+# -------------------------------
+def show_decision_legend():
+    st.markdown("### 📊 Risk Score Legend (0–999)")
+    cols = st.columns(5)
+    labels = [
+        ("0–50", "Auto-Approve", "#d4edda", "#155724"),
+        ("51–200", "Low Risk - Monitor", "#e7f5ff", "#0c5460"),
+        ("201–500", "Manual Review", "#fff3cd", "#856404"),
+        ("501–800", "High Priority Review", "#f8d7da", "#721c24"),
+        ("801–999", "Auto-Decline", "#f5c6cb", "#721c24")
+    ]
+    for col, (score_range, action, bg, color) in zip(cols, labels):
+        with col:
+            st.markdown(f"""
+            <div style="background-color: {bg}; color: {color}; padding: 12px; border-radius: 12px; font-weight: bold; text-align: center; border: 1px solid {bg};">
+            {action}<br><small>{score_range}</small>
+            </div>
+            """, unsafe_allow_html=True)
+
+# -------------------------------
+# Sample CSV Template
+# -------------------------------
 def get_sample_csv():
     sample_data = pd.DataFrame({
         'customer_id': ['cust_001', 'cust_001', 'cust_002', 'cust_002', 'cust_003'],
@@ -110,47 +205,12 @@ def get_sample_csv():
     sample_data['trans_ts'] = pd.to_datetime(sample_data['trans_ts'])
     return sample_data
 
-# Decision badge styling
-def highlight_decision(val):
-    if val == "Approved":
-        bg = "#d4edda"
-        color = "#155724"
-    elif val == "Review":
-        bg = "#fff3cd"
-        color = "#856404"
-    else:  # Flagged
-        bg = "#f8d7da"
-        color = "#721c24"
-    return f'background-color: {bg}; color: {color}; padding: 8px 12px; border-radius: 12px; font-weight: bold; text-align: center;'
-
-# Decision Legend
-def show_decision_legend():
-    st.markdown("### 📊 Decision Legend")
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        st.markdown("""
-        <div style="background-color: #d4edda; color: #155724; padding: 12px; border-radius: 12px; font-weight: bold; text-align: center; border: 1px solid #c3e6cb;">
-        ✅ Approved<br><small>Fraud Probability: 0.00% – 0.10%</small>
-        </div>
-        """, unsafe_allow_html=True)
-    with col2:
-        st.markdown("""
-        <div style="background-color: #fff3cd; color: #856404; padding: 12px; border-radius: 12px; font-weight: bold; text-align: center; border: 1px solid #ffeaa7;">
-        ⚠️ Review<br><small>Fraud Probability: 0.11% – 0.49%</small>
-        </div>
-        """, unsafe_allow_html=True)
-    with col3:
-        st.markdown("""
-        <div style="background-color: #f8d7da; color: #721c24; padding: 12px; border-radius: 12px; font-weight: bold; text-align: center; border: 1px solid #f5c6cb;">
-        🔴 Flagged<br><small>Fraud Probability: ≥ 0.50%</small>
-        </div>
-        """, unsafe_allow_html=True)
-    st.markdown("<br>", unsafe_allow_html=True)
-
+# -------------------------------
 # UI
+# -------------------------------
 st.info("""
-**Required Columns for CSV Upload:**  
-`customer_id`, `trans_ts`, `amount_usd`, `dist_to_home_km`, `card_present`,  
+**Required Columns for CSV Upload:**
+`customer_id`, `trans_ts`, `amount_usd`, `dist_to_home_km`, `card_present`,
 `ip_country`, `device_os`, `merchant_category`, `device_lang`, `ip_isp`
 """)
 
@@ -166,18 +226,63 @@ st.markdown("---")
 st.sidebar.header("Choose Mode")
 mode = st.sidebar.radio("Select a mode", ["Live Demo (Simulate Transactions)", "Upload Your Own CSV"])
 
+# -------------------------------
+# Shared Result Display Logic
+# -------------------------------
+def display_results(df_result):
+    # Summary metrics
+    col1, col2, col3, col4, col5 = st.columns(5)
+    col1.metric("Total Transactions", len(df_result))
+    for action in ["Auto-Approve", "Low Risk - Monitor", "Manual Review", "High Priority Review", "Auto-Decline"]:
+        count = (df_result['decision'] == action).sum()
+        col = col2 if action == "Auto-Approve" else col3 if "Monitor" in action else col4 if "Manual" in action else col5
+        col.metric(action.split(" - ")[0], count)
+
+    show_decision_legend()
+
+    # Display table
+    display_cols = ['customer_id', 'trans_ts', 'amount_usd', 'dist_to_home_km', 'ip_country',
+                    'risk_score', 'fraud_probability', 'decision']
+    display_df = df_result[display_cols].copy()
+    display_df['trans_ts'] = display_df['trans_ts'].dt.strftime('%Y-%m-%d %H:%M:%S')
+    display_df['fraud_probability'] = display_df['fraud_probability'].map('{:.2%}'.format)
+    display_df = display_df.rename(columns={'fraud_probability': 'Fraud Prob'})
+
+    styled = display_df.style.applymap(highlight_action, subset=['decision'])
+    st.subheader("Transaction Decisions")
+    st.dataframe(styled, use_container_width=True)
+
+    # Expandable explanations
+    st.subheader("🔍 Click to View Explanation")
+    for i, row in df_result.iterrows():
+        with st.expander(f"Transaction {i+1}: {row['customer_id']} | ${row['amount_usd']:.2f} | Risk Score: {row['risk_score']}/999"):
+            st.markdown(f"**Decision:** {row['decision']}")
+            st.markdown("**Top Contributing Factors:**")
+            st.markdown(row['explanation'], unsafe_allow_html=True)
+
+    # Download full results
+    csv = df_result.to_csv(index=False).encode('utf-8')
+    st.download_button(
+        label="📥 Download Full Results with Explanations",
+        data=csv,
+        file_name="fraud_predictions_with_explanations.csv",
+        mime="text/csv"
+    )
+
+# -------------------------------
+# Modes
+# -------------------------------
 if mode == "Live Demo (Simulate Transactions)":
     st.header("🔴 Live Simulation Mode")
-    st.write("Generate realistic transactions and see instant fraud decisions.")
-
+    st.write("Generate realistic transactions and see instant fraud decisions with explanations.")
     num_tx = st.slider("Number of transactions to simulate", 5, 100, 20, 5)
 
     if st.button("Generate & Predict Simulated Transactions"):
         with st.spinner("Generating and predicting..."):
+            # (Your existing simulation code - unchanged)
             customer_ids = np.random.choice([f"cust_{i:04d}" for i in range(1, 21)], num_tx)
             base_time = datetime(2025, 1, 1)
             trans_ts = sorted(base_time + timedelta(minutes=np.random.exponential(30)) for _ in range(num_tx))
-
             df_sim = pd.DataFrame({
                 'customer_id': customer_ids,
                 'trans_ts': trans_ts,
@@ -191,36 +296,8 @@ if mode == "Live Demo (Simulate Transactions)":
                 'ip_isp': np.random.choice(['Comcast', 'Verizon', 'AT&T', 'Spectrum', 'Unknown'], num_tx),
             })
             df_sim['trans_ts'] = pd.to_datetime(df_sim['trans_ts'])
-
             df_result = predict_fraud(df_sim)
-
-            # Metrics
-            approved_count = (df_result['decision'] == 'Approved').sum()
-            review_count = (df_result['decision'] == 'Review').sum()
-            flagged_count = (df_result['decision'] == 'Flagged').sum()
-
-            col1, col2, col3, col4 = st.columns(4)
-            col1.metric("Total Transactions", len(df_result))
-            col2.metric("✅ Approved", approved_count)
-            col3.metric("⚠️ Review", review_count)
-            col4.metric("🔴 Flagged", flagged_count)
-
-            # Legend
-            show_decision_legend()
-
-            # Table - with rounded probability for display
-            display_df = df_result[['customer_id', 'trans_ts', 'amount_usd', 'dist_to_home_km', 'ip_country', 'fraud_proba_rounded', 'decision']].copy()
-            display_df = display_df.rename(columns={'fraud_proba_rounded': 'fraud_proba'})
-            display_df['fraud_proba'] = display_df['fraud_proba'].map('{:.2%}'.format)
-            display_df['trans_ts'] = display_df['trans_ts'].dt.strftime('%Y-%m-%d %H:%M:%S')
-
-            st.subheader("Transaction Decisions")
-            styled_df = display_df.style.applymap(highlight_decision, subset=['decision'])
-            st.dataframe(styled_df, use_container_width=True)
-
-            # Download
-            csv = df_result.to_csv(index=False).encode('utf-8')
-            st.download_button("📥 Download Full Results", csv, "simulated_predictions.csv", "text/csv")
+            display_results(df_result)
 
 else:  # Upload mode
     st.header("📂 Upload Your Own Transaction CSV")
@@ -230,44 +307,16 @@ else:  # Upload mode
         try:
             df_upload = pd.read_csv(uploaded_file)
             df_upload['trans_ts'] = pd.to_datetime(df_upload['trans_ts'], errors='coerce')
-
             if df_upload['trans_ts'].isna().any():
-                st.error("Some trans_ts values could not be parsed as dates. Please check the format.")
+                st.error("Some trans_ts values could not be parsed. Check format (e.g., 2025-01-01 10:00:00).")
             else:
                 st.success(f"✅ Loaded {len(df_upload)} transactions.")
-                st.dataframe(df_upload.head(10))
+                st.dataframe(df_upload.head(10), use_container_width=True)
 
                 if st.button("🔍 Run Fraud Detection"):
                     with st.spinner("Processing and predicting..."):
                         df_result = predict_fraud(df_upload)
-
-                        approved_count = (df_result['decision'] == 'Approved').sum()
-                        review_count = (df_result['decision'] == 'Review').sum()
-                        flagged_count = (df_result['decision'] == 'Flagged').sum()
-
-                        col1, col2, col3, col4 = st.columns(4)
-                        col1.metric("Total Transactions", len(df_result))
-                        col2.metric("✅ Approved", approved_count)
-                        col3.metric("⚠️ Review", review_count)
-                        col4.metric("🔴 Flagged", flagged_count)
-
-                        # Legend
-                        show_decision_legend()
-
-                        # Table - with rounded probability for display
-                        display_df = df_result[['customer_id', 'trans_ts', 'amount_usd', 'dist_to_home_km', 'ip_country', 'fraud_proba_rounded', 'decision']].copy()
-                        display_df = display_df.rename(columns={'fraud_proba_rounded': 'fraud_proba'})
-                        display_df['fraud_proba'] = display_df['fraud_proba'].map('{:.2%}'.format)
-                        display_df['trans_ts'] = display_df['trans_ts'].dt.strftime('%Y-%m-%d %H:%M:%S')
-
-                        st.subheader("Transaction Decisions")
-                        styled_df = display_df.style.applymap(highlight_decision, subset=['decision'])
-                        st.dataframe(styled_df, use_container_width=True)
-
-                        # Download
-                        csv = df_result.to_csv(index=False).encode('utf-8')
-                        st.download_button("📥 Download Results with Predictions", csv, "batch_fraud_predictions.csv", "text/csv")
-
+                        display_results(df_result)
         except Exception as e:
             st.error(f"Error reading file: {str(e)}")
-            st.info("Ensure your CSV has all required columns and correct data types.")
+            st.info("Ensure CSV has all required columns and correct types.")
