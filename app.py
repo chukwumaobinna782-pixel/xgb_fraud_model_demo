@@ -230,66 +230,14 @@ mode = st.sidebar.radio("Select a mode", ["Live Demo (Simulate Transactions)", "
 # Shared Result Display Logic
 # -------------------------------
 def display_results(df_result):
-           # Color-coded Summary Metrics (matching legend exactly)
-    st.markdown("### 📊 Decision Summary")
-
+    # Summary metrics
     col1, col2, col3, col4, col5 = st.columns(5)
-    
-    with col1:
-        st.metric("Total Transactions", len(df_result))
-
-    # Badge-style colored counts
-    badge_style = {
-        "Auto-Approve": ("#d4edda", "#155724"),
-        "Low Risk - Monitor": ("#e7f5ff", "#0c5460"),
-        "Manual Review": ("#fff3cd", "#856404"),
-        "High Priority Review": ("#f8d7da", "#721c24"),
-        "Auto-Decline": ("#f5c6cb", "#721c24")
-    }
-
-    actions_list = ["Auto-Approve", "Low Risk - Monitor", "Manual Review", "High Priority Review", "Auto-Decline"]
-
-    for i, action in enumerate(actions_list):
+    col1.metric("Total Transactions", len(df_result))
+    for action in ["Auto-Approve", "Low Risk - Monitor", "Manual Review", "High Priority Review", "Auto-Decline"]:
         count = (df_result['decision'] == action).sum()
-        short_label = action.replace(" - ", "\n")
-        bg_color, text_color = badge_style[action]
-        
-        # Use separate columns for first 4, stack last one below High Priority
-        if i == 0:
-            with col2:
-                st.markdown(f"""
-                <div style="background-color: {bg_color}; color: {text_color}; padding: 12px; border-radius: 12px; text-align: center; font-weight: bold;">
-                    {short_label}<br><span style="font-size: 28px;">{count}</span>
-                </div>
-                """, unsafe_allow_html=True)
-        elif i == 1:
-            with col3:
-                st.markdown(f"""
-                <div style="background-color: {bg_color}; color: {text_color}; padding: 12px; border-radius: 12px; text-align: center; font-weight: bold;">
-                    {short_label}<br><span style="font-size: 28px;">{count}</span>
-                </div>
-                """, unsafe_allow_html=True)
-        elif i == 2:
-            with col4:
-                st.markdown(f"""
-                <div style="background-color: {bg_color}; color: {text_color}; padding: 12px; border-radius: 12px; text-align: center; font-weight: bold;">
-                    {short_label}<br><span style="font-size: 28px;">{count}</span>
-                </div>
-                """, unsafe_allow_html=True)
-        elif i == 3:
-            with col5:
-                st.markdown(f"""
-                <div style="background-color: {bg_color}; color: {text_color}; padding: 12px; border-radius: 12px; text-align: center; font-weight: bold;">
-                    {short_label}<br><span style="font-size: 28px;">{count}</span>
-                </div>
-                """, unsafe_allow_html=True)
-        else:  # Auto-Decline
-            with col5:
-                st.markdown(f"""
-                <div style="background-color: {bg_color}; color: {text_color}; padding: 12px; border-radius: 12px; text-align: center; font-weight: bold; margin-top: 10px;">
-                    {short_label}<br><span style="font-size: 28px;">{count}</span>
-                </div>
-                """, unsafe_allow_html=True)
+        col = col2 if action == "Auto-Approve" else col3 if "Monitor" in action else col4 if "Manual" in action else col5
+        col.metric(action.split(" - ")[0], count)
+
     show_decision_legend()
 
     # Display table
