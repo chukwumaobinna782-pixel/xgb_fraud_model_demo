@@ -230,7 +230,7 @@ mode = st.sidebar.radio("Select a mode", ["Live Demo (Simulate Transactions)", "
 # Shared Result Display Logic
 # -------------------------------
 def display_results(df_result):
-       # Color-coded Summary Metrics (matching legend exactly)
+           # Color-coded Summary Metrics (matching legend exactly)
     st.markdown("### 📊 Decision Summary")
 
     col1, col2, col3, col4, col5 = st.columns(5)
@@ -248,28 +248,48 @@ def display_results(df_result):
     }
 
     actions_list = ["Auto-Approve", "Low Risk - Monitor", "Manual Review", "High Priority Review", "Auto-Decline"]
-    cols_list = [col2, col3, col4, col5, col5]  # Auto-Decline shares column with High Priority (or adjust layout)
 
     for i, action in enumerate(actions_list):
         count = (df_result['decision'] == action).sum()
         short_label = action.replace(" - ", "\n")
         bg_color, text_color = badge_style[action]
         
-        if i < 4:
-            with cols_list[i]:
+        # Use separate columns for first 4, stack last one below High Priority
+        if i == 0:
+            with col2:
                 st.markdown(f"""
-                <div style="background-color: {bg_color}; color: {text_color}; padding: 12px; border-radius: 12px; text-align: center; font-weight: bold; border: 1px solid {bg_color};">
-                    {short_label}<br><span style="font-size: 24px;">{count}</span>
+                <div style="background-color: {bg_color}; color: {text_color}; padding: 12px; border-radius: 12px; text-align: center; font-weight: bold;">
+                    {short_label}<br><span style="font-size: 28px;">{count}</span>
                 </div>
                 """, unsafe_allow_html=True)
-        else:
+        elif i == 1:
+            with col3:
+                st.markdown(f"""
+                <div style="background-color: {bg_color}; color: {text_color}; padding: 12px; border-radius: 12px; text-align: center; font-weight: bold;">
+                    {short_label}<br><span style="font-size: 28px;">{count}</span>
+                </div>
+                """, unsafe_allow_html=True)
+        elif i == 2:
+            with col4:
+                st.markdown(f"""
+                <div style="background-color: {bg_color}; color: {text_color}; padding: 12px; border-radius: 12px; text-align: center; font-weight: bold;">
+                    {short_label}<br><span style="font-size: 28px;">{count}</span>
+                </div>
+                """, unsafe_allow_html=True)
+        elif i == 3:
             with col5:
                 st.markdown(f"""
-                <div style="background-color: {bg_color}; color: {text_color}; padding: 12px; border-radius: 12px; text-align: center; font-weight: bold; border: 1px solid {bg_color}; margin-top: 10px;">
-                    {short_label}<br><span style="font-size: 24px;">{count}</span>
+                <div style="background-color: {bg_color}; color: {text_color}; padding: 12px; border-radius: 12px; text-align: center; font-weight: bold;">
+                    {short_label}<br><span style="font-size: 28px;">{count}</span>
                 </div>
-                """, unsafe_allow_html=True)t)
-
+                """, unsafe_allow_html=True)
+        else:  # Auto-Decline
+            with col5:
+                st.markdown(f"""
+                <div style="background-color: {bg_color}; color: {text_color}; padding: 12px; border-radius: 12px; text-align: center; font-weight: bold; margin-top: 10px;">
+                    {short_label}<br><span style="font-size: 28px;">{count}</span>
+                </div>
+                """, unsafe_allow_html=True)
     show_decision_legend()
 
     # Display table
