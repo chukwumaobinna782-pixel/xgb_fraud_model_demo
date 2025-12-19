@@ -230,13 +230,45 @@ mode = st.sidebar.radio("Select a mode", ["Live Demo (Simulate Transactions)", "
 # Shared Result Display Logic
 # -------------------------------
 def display_results(df_result):
-    # Summary metrics
+       # Color-coded Summary Metrics (matching legend exactly)
+    st.markdown("### 📊 Decision Summary")
+
     col1, col2, col3, col4, col5 = st.columns(5)
-    col1.metric("Total Transactions", len(df_result))
-    for action in ["Auto-Approve", "Low Risk - Monitor", "Manual Review", "High Priority Review", "Auto-Decline"]:
+    
+    with col1:
+        st.metric("Total Transactions", len(df_result))
+
+    # Badge-style colored counts
+    badge_style = {
+        "Auto-Approve": ("#d4edda", "#155724"),
+        "Low Risk - Monitor": ("#e7f5ff", "#0c5460"),
+        "Manual Review": ("#fff3cd", "#856404"),
+        "High Priority Review": ("#f8d7da", "#721c24"),
+        "Auto-Decline": ("#f5c6cb", "#721c24")
+    }
+
+    actions_list = ["Auto-Approve", "Low Risk - Monitor", "Manual Review", "High Priority Review", "Auto-Decline"]
+    cols_list = [col2, col3, col4, col5, col5]  # Auto-Decline shares column with High Priority (or adjust layout)
+
+    for i, action in enumerate(actions_list):
         count = (df_result['decision'] == action).sum()
-        col = col2 if action == "Auto-Approve" else col3 if "Monitor" in action else col4 if "Manual" in action else col5
-        col.metric(action.split(" - ")[0], count)
+        short_label = action.replace(" - ", "\n")
+        bg_color, text_color = badge_style[action]
+        
+        if i < 4:
+            with cols_list[i]:
+                st.markdown(f"""
+                <div style="background-color: {bg_color}; color: {text_color}; padding: 12px; border-radius: 12px; text-align: center; font-weight: bold; border: 1px solid {bg_color};">
+                    {short_label}<br><span style="font-size: 24px;">{count}</span>
+                </div>
+                """, unsafe_allow_html=True)
+        else:
+            with col5:
+                st.markdown(f"""
+                <div style="background-color: {bg_color}; color: {text_color}; padding: 12px; border-radius: 12px; text-align: center; font-weight: bold; border: 1px solid {bg_color}; margin-top: 10px;">
+                    {short_label}<br><span style="font-size: 24px;">{count}</span>
+                </div>
+                """, unsafe_allow_html=True)t)
 
     show_decision_legend()
 
