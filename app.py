@@ -68,7 +68,7 @@ def preprocess_df(df_raw):
     X = df[all_features]
     return X, df
 
-# Prediction function with corrected decision logic
+# Prediction function
 def predict_fraud(df_raw):
     X, df_processed = preprocess_df(df_raw)
     y_prob = model.predict_proba(X)[:, 1]
@@ -80,7 +80,7 @@ def predict_fraud(df_raw):
     # Create rounded probability for consistent decision and display
     df_processed['fraud_proba_rounded'] = df_processed['fraud_proba'].round(4)
     
-    # Decision based on rounded probability (matches displayed value exactly)
+    # Decision based on rounded probability
     def get_decision(prob):
         if prob <= 0.10:
             return "Approved"
@@ -123,7 +123,7 @@ def highlight_decision(val):
         color = "#721c24"
     return f'background-color: {bg}; color: {color}; padding: 8px 12px; border-radius: 12px; font-weight: bold; text-align: center;'
 
-# Decision Legend (reusable)
+# Decision Legend
 def show_decision_legend():
     st.markdown("### 📊 Decision Legend")
     col1, col2, col3 = st.columns(3)
@@ -208,7 +208,7 @@ if mode == "Live Demo (Simulate Transactions)":
             # Legend
             show_decision_legend()
 
-            # Table - use rounded probability for display
+            # Table - with rounded probability for display
             display_df = df_result[['customer_id', 'trans_ts', 'amount_usd', 'dist_to_home_km', 'ip_country', 'fraud_proba_rounded', 'decision']].copy()
             display_df = display_df.rename(columns={'fraud_proba_rounded': 'fraud_proba'})
             display_df['fraud_proba'] = display_df['fraud_proba'].map('{:.2%}'.format)
@@ -254,7 +254,7 @@ else:  # Upload mode
                         # Legend
                         show_decision_legend()
 
-                        # Table - use rounded probability for display
+                        # Table - with rounded probability for display
                         display_df = df_result[['customer_id', 'trans_ts', 'amount_usd', 'dist_to_home_km', 'ip_country', 'fraud_proba_rounded', 'decision']].copy()
                         display_df = display_df.rename(columns={'fraud_proba_rounded': 'fraud_proba'})
                         display_df['fraud_proba'] = display_df['fraud_proba'].map('{:.2%}'.format)
