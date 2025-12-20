@@ -272,49 +272,61 @@ if mode == "Live Demo (Simulate Transactions)":
 
     # Streaming loop
     if st.session_state.streaming_active:
-        # Generate one new transaction
-        customer_id = np.random.choice([f"cust_{i:04d}" for i in range(1, 21)])
-        trans_time = datetime.now()
+        try:
+            # Generate one new transaction
+            customer_id = np.random.choice([f"cust_{i:04d}" for i in range(1, 21)])
+            trans_time = datetime.now()
 
-        new_tx = pd.DataFrame({
-            'customer_id': [customer_id],
-            'trans_ts': [trans_time],
-            'amount_usd': [round(np.random.lognormal(4.5, 1.0), 2)],
-           'dist_to_home_km': [round(np.clip(np.random.exponential(500), 0, 10000), 1)],
-            'card_present': [np.random.choice([0, 1], p=[0.3, 0.7])],
-            'ip_country': [np.random.choice(['US', 'CA', 'GB', 'FR', 'DE', 'RU', 'CN', 'MX'],
-                                           p=[0.65, 0.1, 0.08, 0.06, 0.05, 0.03, 0.02, 0.01])],
-            'device_os': [np.random.choice(['Windows', 'macOS', 'iOS', 'Android', 'Linux'],
-                                          p=[0.35, 0.25, 0.2, 0.15, 0.05])],
-            'merchant_category': [np.random.choice(['Grocery', 'Electronics', 'Travel', 'Clothing', 'Entertainment', 'Dining'])],
-            'device_lang': [np.random.choice(['en-US', 'en-GB', 'es-ES', 'fr-FR', 'ru-RU'],
-                                            p=[0.7, 0.1, 0.1, 0.05, 0.05])],
-            'ip_isp': [np.random.choice(['Comcast', 'Verizon', 'AT&T', 'Spectrum', 'Unknown'])],
-        })
+            # Safer random generation (prevent extreme values)
+            amount = np.random.lognormal(4.5, 1.0)
+            amount = np.clip(amount, 1.0, 10000.0)  # Avoid $0 or insane amounts
 
-        # Append to growing historical data
-        st.session_state.historical_raw = pd.concat(
-            [st.session_state.historical_raw, new_tx], ignore_index=True
-        )
+            dist = np.random.exponential(500)
+            dist = np.clip(dist, 0.1, 10000.0)  # Avoid 0 or huge distances
 
-        # Predict on full history (ensures correct customer-level features)
-        df_result = predict_fraud(st.session_state.historical_raw.copy())
+            new_tx = pd.DataFrame({
+                'customer_id': [customer_id],
+                'trans_ts': [trans_time],
+                'amount_usd': [round(amount, 2)],
+                'dist_to_home_km': [round(dist, 1)],
+                'card_present': [np.random.choice([0, 1], p=[0.3, 0.7])],
+                'ip_country': [np.random.choice(['US', 'CA', 'GB', 'FR', 'DE', 'RU', 'CN', 'MX'],
+                                               p=[0.65, 0.1, 0.08, 0.06, 0.05, 0.03, 0.02, 0.01])],
+                'device_os': [np.random.choice(['Windows', 'macOS', 'iOS', 'Android', 'Linux'],
+                                              p=[0.35, 0.25, 0.2, 0.15, 0.05])],
+                'merchant_category': [np.random.choice(['Grocery', 'Electronics', 'Travel', 'Clothing', 'Entertainment', 'Dining'])],
+                'device_lang': [np.random.choice(['en-US', 'en-GB', 'es-ES', 'fr-FR', 'ru-RU'],
+                                                p=[0.7, 0.1, 0.1, 0.05, 0.05])],
+                'ip_isp': [np.random.choice(['Comcast', 'Verizon', 'AT&T', 'Spectrum', 'Unknown'])],
+            })
 
-        # Store full results
-        st.session_state.results = df_result
-        st.session_state.generated_count += 1
+            # Append safely
+            st.session_state.historical_raw = pd.concat(
+                [st.session_state.historical_raw, new_tx], ignore_index=True
+            )
 
-        # Auto-stop
-        if st.session_state.generated_count >= max_transactions:
-            st.session_state.streaming_active = False
-            st.success(f"✅ Simulation complete: {max_transactions} transactions processed!")
+            # Predict
+            df_result = predict_fraud(st.session_state.historical_raw.copy())
+            st.session_state.results = df_result
+            st.session_state.generated_count += 1
 
-        # Small delay to control speed
-        time.sleep(delay_between_tx)
+            # Auto-stop
+            if st.session_state.generated_count >= max_transactions:
+                st.session_state.streaming_active = False
+                st.success(f"✅ Simulation complete: {max_transactions} transactions processed!")
 
-        # Trigger rerun to update UI
+            # Short, safe sleep
+            time.sleep(max(0.01, delay_between_tx))  # Never sleep 0 or negative
+
+        except Exception as e:
+            # Critical: catch error but keep stream alive if possible
+            st.session_state.streaming_active = False  # Stop on error
+            st.error("⚠️ Streaming stopped due to an error:")
+            st.exception(e)  # Shows full traceback for debugging
+            st.info("Check logs or refresh to restart.")
+
+        # Always rerun at the end
         st.rerun()
-
     # -------------------------------
     # Live Display (updated every rerun)
     # -------------------------------
