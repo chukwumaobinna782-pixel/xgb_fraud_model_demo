@@ -1,6 +1,7 @@
 # app.py
 import streamlit as st
 import pandas as pd
+pd.set_option('styler.render.max_elements', 1000000)
 import numpy as np
 import xgboost as xgb
 import json
