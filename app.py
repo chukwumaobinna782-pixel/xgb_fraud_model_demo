@@ -322,8 +322,7 @@ else:  # Upload mode
                     # Display summary stats and full results table
                     display_results(df_result)
                     
-                                        # 2. SHAP explanations ONLY for non Auto-Approved transactions
-                    flagged_df = df_result[df_result['decision'] != 'Auto-Approve'].copy()
+                                 flagged_df = df_result[df_result['decision'] != 'Auto-Approve'].copy()
 
                     if flagged_df.empty:
                         st.success("🎉 All transactions were **Auto-Approved**! No SHAP explanations needed.")
