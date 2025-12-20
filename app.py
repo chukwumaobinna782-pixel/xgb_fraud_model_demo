@@ -279,7 +279,7 @@ if mode == "Live Demo (Simulate Transactions)":
             'customer_id': [customer_id],
             'trans_ts': [trans_time],
             'amount_usd': [round(np.random.lognormal(4.5, 1.0), 2)],
-            'dist_to_home_km': [round(np.random.exponential(500).clip(0, 10000), 1)],
+           'dist_to_home_km': [round(np.clip(np.random.exponential(500), 0, 10000), 1)],
             'card_present': [np.random.choice([0, 1], p=[0.3, 0.7])],
             'ip_country': [np.random.choice(['US', 'CA', 'GB', 'FR', 'DE', 'RU', 'CN', 'MX'],
                                            p=[0.65, 0.1, 0.08, 0.06, 0.05, 0.03, 0.02, 0.01])],
