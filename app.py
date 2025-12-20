@@ -303,21 +303,81 @@ if mode == "Live Demo (Simulate Transactions)":
 else:  # Upload mode
     st.header("📂 Upload Your Own Transaction CSV")
     uploaded_file = st.file_uploader("Choose a CSV file", type=["csv"])
-
+    
     if uploaded_file is not None:
         try:
             df_upload = pd.read_csv(uploaded_file)
             df_upload['trans_ts'] = pd.to_datetime(df_upload['trans_ts'], errors='coerce')
+            
             if df_upload['trans_ts'].isna().any():
                 st.error("Some trans_ts values could not be parsed. Check format (e.g., 2025-01-01 10:00:00).")
             else:
                 st.success(f"✅ Loaded {len(df_upload)} transactions.")
                 st.dataframe(df_upload.head(10), use_container_width=True)
-
+                
                 if st.button("🔍 Run Fraud Detection"):
-                    with st.spinner("Processing and predicting..."):
+                    with st.spinner("Processing and predicting on all transactions..."):
                         df_result = predict_fraud(df_upload)
-                        display_results(df_result)
+                    
+                    # 1. Display summary stats and full results table
+                    display_results(df_result)
+                    
+                    # 2. NEW: SHAP explanations ONLY for non Auto-Approved transactions
+                    flagged_df = df_result[df_result['decision'] != 'Auto-Approve'].copy()
+                    
+                    if flagged_df.empty:
+                        st.success("🎉 All transactions were **Auto-Approved**! No SHAP explanations needed.")
+                    else:
+                        st.markdown(f"""
+                        ### 🔬 SHAP Explanations for {len(flagged_df)} Flagged Transaction(s)
+                        These visualizations show why the model flagged these transactions.
+                        """)
+                        
+                        with st.spinner(f"Computing SHAP values for {len(flagged_df)} flagged transactions..."):
+                            # Cache the explainer for better performance across runs
+                            @st.cache_resource
+                            def get_explainer(_model):
+                                # Adjust based on your actual model type
+                                try:
+                                    return shap.TreeExplainer(_model)  # Fastest for XGBoost/LightGBM/RF/CatBoost
+                                except:
+                                    return shap.Explainer(_model)
+                            
+                            explainer = get_explainer(model)  # <-- make sure 'model' is accessible here (your trained model)
+                            
+                            # Select only feature columns (exclude prediction/decision columns)
+                            feature_columns = [col for col in df_result.columns if col not in ['is_fraud', 'fraud_proba', 'decision']]
+                            X_flagged = flagged_df[feature_columns]
+                            
+                            shap_values = explainer.shap_values(X_flagged)
+                        
+                        # Display individual force plots (interactive HTML version)
+                        st.info("Individual explanations (red = pushes toward fraud, blue = pushes toward legitimate):")
+                        
+                        for idx in flagged_df.index:
+                            row = flagged_df.loc[idx]
+                            proba = row['fraud_proba']
+                            decision = row['decision']
+                            
+                            st.markdown(f"**Transaction Index: {idx} | Decision: {decision} | Fraud Probability: {proba:.3f}**")
+                            
+                            # Interactive force plot (recommended for Streamlit)
+                            shap_html = shap.force_plot(
+                                explainer.expected_value,
+                                shap_values[idx] if isinstance(shap_values, list) else shap_values[flagged_df.index.get_loc(idx)],
+                                X_flagged.loc[idx],
+                                show=False,
+                                matplotlib=False
+                            )
+                            st.components.v1.html(shap_html.data, height=200, scrolling=True)
+                            st.markdown("---")
+                        
+                        # Optional: Summary plot for all flagged transactions
+                        st.markdown("#### Summary of Feature Impacts Across Flagged Transactions")
+                        shap.summary_plot(shap_values, X_flagged, show=False)
+                        st.pyplot(plt.gcf())
+                        plt.clf()  # Clear figure to avoid overlap
+
         except Exception as e:
             st.error(f"Error reading file: {str(e)}")
             st.info("Ensure CSV has all required columns and correct types.")
