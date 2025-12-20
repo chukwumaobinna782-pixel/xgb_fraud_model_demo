@@ -71,7 +71,7 @@ def preprocess_df(df_raw):
     return X, df
 
 # -------------------------------
-# Prediction Function (NO SHAP in upload mode)
+# Prediction Function (Clean - no SHAP)
 # -------------------------------
 def predict_fraud(df_raw):
     X, df_processed = preprocess_df(df_raw)
@@ -134,6 +134,45 @@ def show_decision_legend():
             """, unsafe_allow_html=True)
 
 # -------------------------------
+# Clean Result Display (used in BOTH modes - no explanations)
+# -------------------------------
+def display_results(df_result):
+    # Summary metrics
+    col1, col2, col3, col4, col5 = st.columns(5)
+    col1.metric("Total Transactions", len(df_result))
+    actions = ["Auto-Approve", "Low Risk - Monitor", "Manual Review", "High Priority Review", "Auto-Decline"]
+    for i, action in enumerate(actions):
+        count = (df_result['decision'] == action).sum()
+        short_name = action.split(" - ")[0] if " - " in action else action
+        col = [col2, col3, col4, col5, col5][i]
+        col.metric(short_name, count)
+
+    # Legend
+    show_decision_legend()
+
+    # Styled table
+    display_cols = ['customer_id', 'trans_ts', 'amount_usd', 'dist_to_home_km', 'ip_country',
+                    'risk_score', 'fraud_probability', 'decision']
+    display_df = df_result[display_cols].copy()
+    display_df['trans_ts'] = display_df['trans_ts'].dt.strftime('%Y-%m-%d %H:%M:%S')
+    display_df['fraud_probability'] = display_df['fraud_probability'].map('{:.2%}'.format)
+    display_df = display_df.rename(columns={'fraud_probability': 'Fraud Prob'})
+
+    styled = display_df.style.applymap(highlight_action, subset=['decision'])
+
+    st.subheader("Transaction Decisions")
+    st.dataframe(styled, use_container_width=True)
+
+    # Download button
+    csv = df_result.to_csv(index=False).encode('utf-8')
+    st.download_button(
+        label="📥 Download Results with Predictions",
+        data=csv,
+        file_name="fraud_detection_results.csv",
+        mime="text/csv"
+    )
+
+# -------------------------------
 # Sample CSV Template
 # -------------------------------
 def get_sample_csv():
@@ -173,49 +212,15 @@ st.sidebar.header("Choose Mode")
 mode = st.sidebar.radio("Select a mode", ["Live Demo (Simulate Transactions)", "Upload Your Own CSV"])
 
 # -------------------------------
-# Shared Result Display (CLEAN for Upload Mode)
+# Modes
 # -------------------------------
-def display_results(df_result):
-    # Summary metrics
-    col1, col2, col3, col4, col5 = st.columns(5)
-    col1.metric("Total Transactions", len(df_result))
-    for action in ["Auto-Approve", "Low Risk - Monitor", "Manual Review", "High Priority Review", "Auto-Decline"]:
-        count = (df_result['decision'] == action).sum()
-        col = col2 if action == "Auto-Approve" else \
-              col3 if "Monitor" in action else \
-              col4 if "Manual" in action else col5
-        col.metric(action.split(" - ")[0], count)
-
-    show_decision_legend()
-
-    # Display table
-    display_cols = ['customer_id', 'trans_ts', 'amount_usd', 'dist_to_home_km', 'ip_country',
-                    'risk_score', 'fraud_probability', 'decision']
-    display_df = df_result[display_cols].copy()
-    display_df['trans_ts'] = display_df['trans_ts'].dt.strftime('%Y-%m-%d %H:%M:%S')
-    display_df['fraud_probability'] = display_df['fraud_probability'].map('{:.2%}'.format)
-    display_df = display_df.rename(columns={'fraud_probability': 'Fraud Prob'})
-
-    styled = display_df.style.applymap(highlight_action, subset=['decision'])
-    st.subheader("Transaction Decisions")
-    st.dataframe(styled, use_container_width=True)
-
-    # Download button
-    csv = df_result.to_csv(index=False).encode('utf-8')
-    st.download_button(
-        label="📥 Download Results with Predictions",
-        data=csv,
-        file_name="fraud_detection_results.csv",
-        mime="text/csv"
-    )
-
 if mode == "Live Demo (Simulate Transactions)":
     st.header("🔴 Live Simulation Mode")
     st.write("Generate realistic transactions and see instant fraud decisions with explanations.")
     num_tx = st.slider("Number of transactions to simulate", 5, 100, 20, 5)
+    
     if st.button("Generate & Predict Simulated Transactions"):
         with st.spinner("Generating and predicting..."):
-            # Your simulation code (unchanged)
             customer_ids = np.random.choice([f"cust_{i:04d}" for i in range(1, 21)], num_tx)
             base_time = datetime(2025, 1, 1)
             trans_ts = sorted(base_time + timedelta(minutes=np.random.exponential(30)) for _ in range(num_tx))
@@ -233,10 +238,10 @@ if mode == "Live Demo (Simulate Transactions)":
             })
             df_sim['trans_ts'] = pd.to_datetime(df_sim['trans_ts'])
 
-            # Predict with text explanations (only for small demo)
+            # Add text explanations using SHAP (only for Live Demo)
             import shap
             explainer = shap.TreeExplainer(model)
-            X_sim, df_processed_sim = preprocess_df(df_sim)
+            X_sim, _ = preprocess_df(df_sim)
             shap_values = explainer.shap_values(X_sim)
             shap_df = pd.DataFrame(shap_values, columns=features)
 
@@ -251,14 +256,13 @@ if mode == "Live Demo (Simulate Transactions)":
                     reasons.append(f"• **{feat}** = {val} → {direction} risk by {abs(impact):.1f}")
                 return "\n".join(reasons)
 
-            top_reasons = [get_top_reasons(i) for i in range(len(df_processed_sim))]
             df_result = predict_fraud(df_sim)
-            df_result['explanation'] = top_reasons
+            df_result['explanation'] = [get_top_reasons(i) for i in range(len(df_result))]
 
-            # Show clean table + download
+            # Show main results
             display_results(df_result)
 
-            # Only here: show individual explanations (safe because num_tx ≤ 100)
+            # Explanations only in Live Demo
             st.markdown("---")
             st.subheader("🔍 Click to View Explanation (Live Demo Only)")
             for i, row in df_result.iterrows():
@@ -267,7 +271,7 @@ if mode == "Live Demo (Simulate Transactions)":
                     st.markdown("**Top Contributing Factors:**")
                     st.markdown(row['explanation'], unsafe_allow_html=True)
 
-else:  # Upload mode
+else:  # Upload Your Own CSV
     st.header("📂 Upload Your Own Transaction CSV")
     uploaded_file = st.file_uploader("Choose a CSV file", type=["csv"])
 
@@ -286,10 +290,9 @@ else:  # Upload mode
                     with st.spinner("Processing and predicting on all transactions..."):
                         df_result = predict_fraud(df_upload)
 
-                    display_results(df_result)  # Clean: table + download only
+                    # Clean display: summary, legend, table, download — NO explanations
+                    display_results(df_result)
 
         except Exception as e:
             st.error(f"Error reading file: {str(e)}")
             st.info("Ensure CSV has all required columns and correct types.")
-
-
