@@ -319,12 +319,12 @@ else:  # Upload mode
                     with st.spinner("Processing and predicting on all transactions..."):
                         df_result = predict_fraud(df_upload)
                     
-                    # 1. Display summary stats and full results table
+                    # Display summary stats and full results table
                     display_results(df_result)
                     
-                    # 2. NEW: SHAP explanations ONLY for non Auto-Approved transactions
+                    # SHAP explanations ONLY for non Auto-Approved transactions
                     flagged_df = df_result[df_result['decision'] != 'Auto-Approve'].copy()
-                    
+
                     if flagged_df.empty:
                         st.success("🎉 All transactions were **Auto-Approved**! No SHAP explanations needed.")
                     else:
@@ -332,51 +332,58 @@ else:  # Upload mode
                         ### 🔬 SHAP Explanations for {len(flagged_df)} Flagged Transaction(s)
                         These visualizations show why the model flagged these transactions.
                         """)
-                        
+
                         with st.spinner(f"Computing SHAP values for {len(flagged_df)} flagged transactions..."):
-                            # Cache the explainer for better performance across runs
                             @st.cache_resource
                             def get_explainer(_model):
-                                # Adjust based on your actual model type
                                 try:
-                                    return shap.TreeExplainer(_model)  # Fastest for XGBoost/LightGBM/RF/CatBoost
+                                    return shap.TreeExplainer(_model)  # Fast for tree models
                                 except:
                                     return shap.Explainer(_model)
-                            
-                            explainer = get_explainer(model)  # <-- make sure 'model' is accessible here (your trained model)
-                            
-                            # Select only feature columns (exclude prediction/decision columns)
+
+                            explainer = get_explainer(model)  # Ensure 'model' is your trained model
+
                             feature_columns = [col for col in df_result.columns if col not in ['is_fraud', 'fraud_proba', 'decision']]
                             X_flagged = flagged_df[feature_columns]
-                            
+
                             shap_values = explainer.shap_values(X_flagged)
-                        
-                        # Display individual force plots (interactive HTML version)
-                        st.info("Individual explanations (red = pushes toward fraud, blue = pushes toward legitimate):")
-                        
-                        for idx in flagged_df.index:
-                            row = flagged_df.loc[idx]
+
+                            # CRITICAL FIX: Reset index to 0, 1, 2, ... to avoid JS index error
+                            X_flagged = X_flagged.reset_index(drop=True)
+                            flagged_df = flagged_df.reset_index(drop=True)
+
+                            # If shap_values is a list (e.g., for classification), handle accordingly
+                            if isinstance(shap_values, list):
+                                shap_values = [sv.reset_index(drop=True) if hasattr(sv, 'reset_index') else sv for sv in shap_values]
+                            else:
+                                shap_values = pd.DataFrame(shap_values).reset_index(drop=True).values  # Ensure it's numpy array with reset
+
+                        st.info("Individual explanations (red = increases fraud risk, blue = decreases risk):")
+
+                        for i in range(len(flagged_df)):
+                            row = flagged_df.iloc[i]
+                            idx_original = df_result.index[row.name]  # Optional: keep original index for reference
                             proba = row['fraud_proba']
                             decision = row['decision']
-                            
-                            st.markdown(f"**Transaction Index: {idx} | Decision: {decision} | Fraud Probability: {proba:.3f}**")
-                            
-                            # Interactive force plot (recommended for Streamlit)
+
+                            st.markdown(f"**Flagged Transaction #{i+1} | Original Index: {idx_original} | Decision: {decision} | Fraud Probability: {proba:.3f}**")
+
+                            # Now safe: i is 0 to N-1
                             shap_html = shap.force_plot(
                                 explainer.expected_value,
-                                shap_values[idx] if isinstance(shap_values, list) else shap_values[flagged_df.index.get_loc(idx)],
-                                X_flagged.loc[idx],
+                                shap_values[i] if isinstance(shap_values, list) else shap_values[i],
+                                X_flagged.iloc[i],
                                 show=False,
                                 matplotlib=False
                             )
                             st.components.v1.html(shap_html.data, height=200, scrolling=True)
                             st.markdown("---")
-                        
-                        # Optional: Summary plot for all flagged transactions
-                        st.markdown("#### Summary of Feature Impacts Across Flagged Transactions")
+
+                        # Summary plot (safe with reset index)
+                        st.markdown("#### Summary of Feature Impacts Across All Flagged Transactions")
                         shap.summary_plot(shap_values, X_flagged, show=False)
                         st.pyplot(plt.gcf())
-                        plt.clf()  # Clear figure to avoid overlap
+                        plt.clf()
 
         except Exception as e:
             st.error(f"Error reading file: {str(e)}")
