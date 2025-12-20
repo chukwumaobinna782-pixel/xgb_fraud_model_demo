@@ -279,6 +279,9 @@ else:  # Upload Your Own CSV
         try:
             df_upload = pd.read_csv(uploaded_file)
             df_upload['trans_ts'] = pd.to_datetime(df_upload['trans_ts'], errors='coerce')
+            df_upload['card_present'] = pd.to_numeric(df_upload['card_present'], errors='coerce').fillna(0).astype(int)
+            df_upload['amount_usd'] = pd.to_numeric(df_upload['amount_usd'], errors='coerce')
+            df_upload['dist_to_home_km'] = pd.to_numeric(df_upload['dist_to_home_km'], errors='coerce')
 
             if df_upload['trans_ts'].isna().any():
                 st.error("Some trans_ts values could not be parsed. Check format (e.g., 2025-01-01 10:00:00).")
