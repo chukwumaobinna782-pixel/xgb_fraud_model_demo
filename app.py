@@ -214,67 +214,176 @@ mode = st.sidebar.radio("Select a mode", ["Live Demo (Simulate Transactions)", "
 # -------------------------------
 # Modes
 # -------------------------------
+# -------------------------------
+# Modes
+# -------------------------------
 if mode == "Live Demo (Simulate Transactions)":
-    st.header("🔴 Live Simulation Mode")
-    st.write("Generate realistic transactions and see instant fraud decisions with explanations.")
-    num_tx = st.slider("Number of transactions to simulate", 5, 100, 20, 5)
-    
-    if st.button("Generate & Predict Simulated Transactions"):
-        with st.spinner("Generating and predicting..."):
-            customer_ids = np.random.choice([f"cust_{i:04d}" for i in range(1, 21)], num_tx)
-            base_time = datetime(2025, 1, 1)
-            trans_ts = sorted(base_time + timedelta(minutes=np.random.exponential(30)) for _ in range(num_tx))
-            df_sim = pd.DataFrame({
-                'customer_id': customer_ids,
-                'trans_ts': trans_ts,
-                'amount_usd': np.random.lognormal(4.5, 1.0, num_tx).round(2),
-                'dist_to_home_km': np.random.exponential(500, num_tx).clip(0, 10000).round(1),
-                'card_present': np.random.choice([0, 1], num_tx, p=[0.3, 0.7]),
-                'ip_country': np.random.choice(['US', 'CA', 'GB', 'FR', 'DE', 'RU', 'CN', 'MX'], num_tx, p=[0.65, 0.1, 0.08, 0.06, 0.05, 0.03, 0.02, 0.01]),
-                'device_os': np.random.choice(['Windows', 'macOS', 'iOS', 'Android', 'Linux'], num_tx, p=[0.35, 0.25, 0.2, 0.15, 0.05]),
-                'merchant_category': np.random.choice(['Grocery', 'Electronics', 'Travel', 'Clothing', 'Entertainment', 'Dining'], num_tx),
-                'device_lang': np.random.choice(['en-US', 'en-GB', 'es-ES', 'fr-FR', 'ru-RU'], num_tx, p=[0.7, 0.1, 0.1, 0.05, 0.05]),
-                'ip_isp': np.random.choice(['Comcast', 'Verizon', 'AT&T', 'Spectrum', 'Unknown'], num_tx),
-            })
-            df_sim['trans_ts'] = pd.to_datetime(df_sim['trans_ts'])
+    st.header("🔴 Live Streaming Simulation Mode")
+    st.write("Watch transactions arrive in real-time (3–5 per second), get instantly scored by the model, "
+             "and see live decisions + SHAP explanations for the latest transaction — just like a production fraud monitoring dashboard!")
 
-            # Add text explanations using SHAP (only for Live Demo)
-            import shap
-            explainer = shap.TreeExplainer(model)
-            X_sim, _ = preprocess_df(df_sim)
-            shap_values = explainer.shap_values(X_sim)
-            shap_df = pd.DataFrame(shap_values, columns=features)
+    # Controls
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        tx_per_second = st.slider("Transactions per second", 1, 10, 4, help="Higher = faster stream")
+    with col2:
+        max_transactions = st.number_input("Auto-stop after (transactions)", min_value=50, max_value=10000, value=1000, step=50)
+    with col3:
+        st.markdown("")  # Spacer
+        st.markdown("**Status:** Ready to stream")
 
-            def get_top_reasons(row_idx, top_n=3):
-                contributions = shap_df.iloc[row_idx].abs().sort_values(ascending=False)
-                top_features = contributions.index[:top_n]
+    delay_between_tx = 1.0 / tx_per_second
+
+    # Initialize session state
+    if 'streaming_active' not in st.session_state:
+        st.session_state.streaming_active = False
+        st.session_state.historical_raw = pd.DataFrame()  # Raw input transactions (growing)
+        st.session_state.results = pd.DataFrame()        # Full results with predictions
+        st.session_state.generated_count = 0
+
+    # Cached SHAP explainer (load once)
+    @st.cache_resource
+    def get_shap_explainer():
+        import shap
+        return shap.TreeExplainer(model)
+
+    explainer = get_shap_explainer()
+
+    # Start / Stop button
+    if st.session_state.streaming_active:
+        if st.button("🛑 Stop Streaming Simulation"):
+            st.session_state.streaming_active = False
+            st.rerun()
+    else:
+        if st.button("▶️ Start Live Stream"):
+            st.session_state.streaming_active = True
+            st.session_state.historical_raw = pd.DataFrame()
+            st.session_state.results = pd.DataFrame()
+            st.session_state.generated_count = 0
+            st.rerun()
+
+    # Placeholders for live updates
+    placeholder_metrics = st.empty()
+    placeholder_legend = st.empty()
+    placeholder_table = st.empty()
+    placeholder_latest_explanation = st.empty()
+    placeholder_download = st.empty()
+
+    # Streaming loop
+    if st.session_state.streaming_active:
+        # Generate one new transaction
+        customer_id = np.random.choice([f"cust_{i:04d}" for i in range(1, 21)])
+        trans_time = datetime.now()
+
+        new_tx = pd.DataFrame({
+            'customer_id': [customer_id],
+            'trans_ts': [trans_time],
+            'amount_usd': [round(np.random.lognormal(4.5, 1.0), 2)],
+            'dist_to_home_km': [round(np.random.exponential(500).clip(0, 10000), 1)],
+            'card_present': [np.random.choice([0, 1], p=[0.3, 0.7])],
+            'ip_country': [np.random.choice(['US', 'CA', 'GB', 'FR', 'DE', 'RU', 'CN', 'MX'],
+                                           p=[0.65, 0.1, 0.08, 0.06, 0.05, 0.03, 0.02, 0.01])],
+            'device_os': [np.random.choice(['Windows', 'macOS', 'iOS', 'Android', 'Linux'],
+                                          p=[0.35, 0.25, 0.2, 0.15, 0.05])],
+            'merchant_category': [np.random.choice(['Grocery', 'Electronics', 'Travel', 'Clothing', 'Entertainment', 'Dining'])],
+            'device_lang': [np.random.choice(['en-US', 'en-GB', 'es-ES', 'fr-FR', 'ru-RU'],
+                                            p=[0.7, 0.1, 0.1, 0.05, 0.05])],
+            'ip_isp': [np.random.choice(['Comcast', 'Verizon', 'AT&T', 'Spectrum', 'Unknown'])],
+        })
+
+        # Append to growing historical data
+        st.session_state.historical_raw = pd.concat(
+            [st.session_state.historical_raw, new_tx], ignore_index=True
+        )
+
+        # Predict on full history (ensures correct customer-level features)
+        df_result = predict_fraud(st.session_state.historical_raw.copy())
+
+        # Store full results
+        st.session_state.results = df_result
+        st.session_state.generated_count += 1
+
+        # Auto-stop
+        if st.session_state.generated_count >= max_transactions:
+            st.session_state.streaming_active = False
+            st.success(f"✅ Simulation complete: {max_transactions} transactions processed!")
+
+        # Small delay to control speed
+        time.sleep(delay_between_tx)
+
+        # Trigger rerun to update UI
+        st.rerun()
+
+    # -------------------------------
+    # Live Display (updated every rerun)
+    # -------------------------------
+    if not st.session_state.results.empty:
+        df_live = st.session_state.results
+
+        # --- Metrics ---
+        with placeholder_metrics:
+            cols = st.columns(6)
+            cols[0].metric("Processed", len(df_live))
+            actions = ["Auto-Approve", "Low Risk - Monitor", "Manual Review", "High Priority Review", "Auto-Decline"]
+            for i, action in enumerate(actions):
+                count = (df_live['decision'] == action).sum()
+                short = action.split(" - ")[0] if " - " in action else action
+                cols[i+1].metric(short, count)
+
+        # --- Legend ---
+        with placeholder_legend:
+            show_decision_legend()
+
+        # --- Table ---
+        with placeholder_table:
+            st.subheader("📊 Live Transaction Decisions")
+            display_cols = ['customer_id', 'trans_ts', 'amount_usd', 'dist_to_home_km', 'ip_country',
+                            'risk_score', 'fraud_probability', 'decision']
+            disp = df_live[display_cols].copy()
+            disp['trans_ts'] = disp['trans_ts'].dt.strftime('%H:%M:%S')
+            disp['fraud_probability'] = disp['fraud_probability'].map('{:.2%}'.format)
+            disp = disp.rename(columns={'fraud_probability': 'Fraud Prob'})
+            styled = disp.style.map(highlight_action, subset=['decision'])  # Updated: .map instead of deprecated .applymap
+            st.dataframe(styled, use_container_width=True, height=600)
+
+        # --- Latest Transaction SHAP Explanation ---
+        with placeholder_latest_explanation:
+            latest_row = df_live.iloc[-1]
+            latest_X, _ = preprocess_df(st.session_state.historical_raw.tail(1))
+            shap_values_latest = explainer.shap_values(latest_X)
+
+            def get_top_reasons(shap_vals, X_row, top_n=3):
+                contributions = pd.Series(shap_vals[0], index=features).abs().sort_values(ascending=False)
                 reasons = []
-                for feat in top_features:
-                    val = X_sim.iloc[row_idx][feat]
-                    impact = shap_df.iloc[row_idx][feat]
+                for feat in contributions.index[:top_n]:
+                    val = X_row[feat].iloc[0]
+                    impact = shap_vals[0][features.index(feat)]
                     direction = "increases" if impact > 0 else "decreases"
-                    reasons.append(f"• **{feat}** = {val} → {direction} risk by {abs(impact):.1f}")
+                    reasons.append(f"• **{feat}** = {val} → {direction} risk by {abs(impact):.2f}")
                 return "\n".join(reasons)
 
-            df_result = predict_fraud(df_sim)
-            df_result['explanation'] = [get_top_reasons(i) for i in range(len(df_result))]
+            explanation_text = get_top_reasons(shap_values_latest, latest_X, top_n=4)
 
-            # Show main results
-            display_results(df_result)
+            st.markdown("### 🔍 Latest Transaction Explanation")
+            st.markdown(f"**Customer:** {latest_row['customer_id']} | "
+                        f"**Amount:** ${latest_row['amount_usd']:.2f} | "
+                        f"**Risk Score:** {latest_row['risk_score']}/999 → **{latest_row['decision']}**")
+            st.markdown("**Top Contributing Factors:**")
+            st.markdown(explanation_text, unsafe_allow_html=True)
 
-            # Explanations only in Live Demo
-            st.markdown("---")
-            st.subheader("🔍 Click to View Explanation (Live Demo Only)")
-            for i, row in df_result.iterrows():
-                with st.expander(f"Transaction {i+1}: {row['customer_id']} | ${row['amount_usd']:.2f} | Risk Score: {row['risk_score']}/999"):
-                    st.markdown(f"**Decision:** {row['decision']}")
-                    st.markdown("**Top Contributing Factors:**")
-                    st.markdown(row['explanation'], unsafe_allow_html=True)
+        # --- Download ---
+        with placeholder_download:
+            csv_live = df_live.to_csv(index=False).encode('utf-8')
+            st.download_button(
+                label="📥 Download Current Live Results",
+                data=csv_live,
+                file_name=f"live_fraud_detection_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                mime="text/csv"
+            )
 
-else:  # Upload Your Own CSV
+else:  # Upload Your Own CSV (unchanged, with your fixes)
     st.header("📂 Upload Your Own Transaction CSV")
     uploaded_file = st.file_uploader("Choose a CSV file", type=["csv"])
-
     if uploaded_file is not None:
         try:
             df_upload = pd.read_csv(uploaded_file)
@@ -282,20 +391,15 @@ else:  # Upload Your Own CSV
             df_upload['card_present'] = pd.to_numeric(df_upload['card_present'], errors='coerce').fillna(0).astype(int)
             df_upload['amount_usd'] = pd.to_numeric(df_upload['amount_usd'], errors='coerce')
             df_upload['dist_to_home_km'] = pd.to_numeric(df_upload['dist_to_home_km'], errors='coerce')
-
             if df_upload['trans_ts'].isna().any():
                 st.error("Some trans_ts values could not be parsed. Check format (e.g., 2025-01-01 10:00:00).")
             else:
                 st.success(f"✅ Loaded {len(df_upload)} transactions.")
                 st.dataframe(df_upload.head(10), use_container_width=True)
-
                 if st.button("🔍 Run Fraud Detection"):
                     with st.spinner("Processing and predicting on all transactions..."):
                         df_result = predict_fraud(df_upload)
-
-                    # Clean display: summary, legend, table, download — NO explanations
                     display_results(df_result)
-
         except Exception as e:
             st.error(f"Error reading file: {str(e)}")
             st.info("Ensure CSV has all required columns and correct types.")
