@@ -176,15 +176,19 @@ mode = st.sidebar.radio("Select a mode", ["Live Demo (Simulate Transactions)", "
 # Shared Result Display (CLEAN for Upload Mode)
 # -------------------------------
 def display_results(df_result):
+    # Summary metrics
     col1, col2, col3, col4, col5 = st.columns(5)
     col1.metric("Total Transactions", len(df_result))
     for action in ["Auto-Approve", "Low Risk - Monitor", "Manual Review", "High Priority Review", "Auto-Decline"]:
         count = (df_result['decision'] == action).sum()
-        col = col2 if action == "Auto-Approve" else col3 if "Monitor" in action else col4 if "Manual" in action else col5
+        col = col2 if action == "Auto-Approve" else \
+              col3 if "Monitor" in action else \
+              col4 if "Manual" in action else col5
         col.metric(action.split(" - ")[0], count)
 
     show_decision_legend()
 
+    # Display table
     display_cols = ['customer_id', 'trans_ts', 'amount_usd', 'dist_to_home_km', 'ip_country',
                     'risk_score', 'fraud_probability', 'decision']
     display_df = df_result[display_cols].copy()
@@ -205,15 +209,13 @@ def display_results(df_result):
         mime="text/csv"
     )
 
-# -------------------------------
-# Modes
-# -------------------------------
 if mode == "Live Demo (Simulate Transactions)":
     st.header("🔴 Live Simulation Mode")
     st.write("Generate realistic transactions and see instant fraud decisions with explanations.")
     num_tx = st.slider("Number of transactions to simulate", 5, 100, 20, 5)
     if st.button("Generate & Predict Simulated Transactions"):
         with st.spinner("Generating and predicting..."):
+            # Your simulation code (unchanged)
             customer_ids = np.random.choice([f"cust_{i:04d}" for i in range(1, 21)], num_tx)
             base_time = datetime(2025, 1, 1)
             trans_ts = sorted(base_time + timedelta(minutes=np.random.exponential(30)) for _ in range(num_tx))
@@ -231,7 +233,7 @@ if mode == "Live Demo (Simulate Transactions)":
             })
             df_sim['trans_ts'] = pd.to_datetime(df_sim['trans_ts'])
 
-            # For Live Demo only: include text explanations using SHAP
+            # Predict with text explanations (only for small demo)
             import shap
             explainer = shap.TreeExplainer(model)
             X_sim, df_processed_sim = preprocess_df(df_sim)
@@ -253,9 +255,12 @@ if mode == "Live Demo (Simulate Transactions)":
             df_result = predict_fraud(df_sim)
             df_result['explanation'] = top_reasons
 
+            # Show clean table + download
             display_results(df_result)
 
-            st.subheader("🔍 Click to View Explanation")
+            # Only here: show individual explanations (safe because num_tx ≤ 100)
+            st.markdown("---")
+            st.subheader("🔍 Click to View Explanation (Live Demo Only)")
             for i, row in df_result.iterrows():
                 with st.expander(f"Transaction {i+1}: {row['customer_id']} | ${row['amount_usd']:.2f} | Risk Score: {row['risk_score']}/999"):
                     st.markdown(f"**Decision:** {row['decision']}")
@@ -281,8 +286,10 @@ else:  # Upload mode
                     with st.spinner("Processing and predicting on all transactions..."):
                         df_result = predict_fraud(df_upload)
 
-                    display_results(df_result)
+                    display_results(df_result)  # Clean: table + download only
 
         except Exception as e:
             st.error(f"Error reading file: {str(e)}")
             st.info("Ensure CSV has all required columns and correct types.")
+
+
