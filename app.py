@@ -357,8 +357,7 @@ if mode == "Live Demo (Simulate Transactions)":
                         st.markdown("**Top Contributing Factors:**")
                         st.markdown(row['explanation'], unsafe_allow_html=True)
             else:
-                st.success("🎉 No transactions require manual review or decline — all low risk!")
-# -------------------------------
+                st.success("🎉 No transactions require manual review or decline — all low risk!")# -------------------------------
 # Upload CSV Mode (No explanations)
 # -------------------------------
 else:
