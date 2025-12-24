@@ -268,22 +268,21 @@ if mode == "Live Demo (Simulate Transactions)":
     
     if st.button("Generate & Predict Simulated Transactions"):
         with st.spinner(f"Generating {num_tx:,} transactions and running predictions..."):
-            # Realistic customer pool
+            # (Same realistic transaction generation as before)
             customer_pool = [f"cust_{i:05d}" for i in range(1, 2001)]
             customer_ids = np.random.choice(customer_pool, num_tx)
             
             base_time = datetime(2025, 12, 24)
-            time_deltas = np.cumsum(np.random.exponential(scale=15, size=num_tx))  # avg 15 min between tx
+            time_deltas = np.cumsum(np.random.exponential(scale=15, size=num_tx))
             trans_ts = [base_time + timedelta(minutes=float(d)) for d in time_deltas]
             
-            # Fraud injection (~2%)
             is_fraud = np.random.choice([0, 1], num_tx, p=[0.98, 0.02])
             
             df_sim = pd.DataFrame({
                 'customer_id': customer_ids,
                 'trans_ts': trans_ts,
                 'amount_usd': np.where(is_fraud == 1,
-                                      np.random.lognormal(6.0, 1.2, num_tx),  # higher amounts for fraud
+                                      np.random.lognormal(6.0, 1.2, num_tx),
                                       np.random.lognormal(4.5, 1.0, num_tx)).round(2),
                 'dist_to_home_km': np.where(is_fraud == 1,
                                            np.random.exponential(2000, num_tx),
@@ -300,42 +299,65 @@ if mode == "Live Demo (Simulate Transactions)":
                 'ip_isp': np.where(is_fraud == 1,
                                    np.random.choice(['Unknown', 'ProxyCorp', 'VPNGate'], num_tx),
                                    np.random.choice(['Comcast', 'Verizon', 'AT&T', 'Spectrum'], num_tx)),
-                'is_fraud': is_fraud  # only for group feature computation
+                'is_fraud': is_fraud
             })
             
             # Run prediction
             df_result = predict_fraud(df_sim)
             
-            # SHAP explanations (top 3)
-            explainer = shap.TreeExplainer(model)
-            X_sim, _ = preprocess_df(df_sim)
-            shap_values = explainer.shap_values(X_sim)
+            # === SHAP ONLY FOR REVIEW/DECLINE TRANSACTIONS ===
+            review_or_decline = df_result['decision'].isin([
+                "Manual Review",
+                "High Priority Review",
+                "Auto-Decline"
+            ])
             
-            def get_top_reasons(row_idx, top_n=3):
-                contrib = pd.Series(shap_values[row_idx], index=features).abs().sort_values(ascending=False)
-                top_feats = contrib.index[:top_n]
-                reasons = []
-                for feat in top_feats:
-                    val = X_sim.iloc[row_idx][feat]
-                    impact = shap_values[row_idx][features.index(feat)]
-                    direction = "increases" if impact > 0 else "decreases"
-                    reasons.append(f"• **{feat}** = {val} → {direction} risk by {abs(impact):.2f}")
-                return "\n".join(reasons)
+            if review_or_decline.any():
+                st.info(f"🔍 Generating SHAP explanations for {review_or_decline.sum()} transactions requiring review or decline...")
+                
+                explainer = shap.TreeExplainer(model)
+                X_sim, _ = preprocess_df(df_sim)
+                
+                # Only compute SHAP on the subset needing explanation
+                X_review = X_sim[review_or_decline]
+                shap_values_review = explainer.shap_values(X_review)
+                
+                def get_top_reasons(shap_vals_row, x_row, top_n=3):
+                    contrib = pd.Series(shap_vals_row, index=features).abs().sort_values(ascending=False)
+                    top_feats = contrib.index[:top_n]
+                    reasons = []
+                    for feat in top_feats:
+                        val = x_row[feat]
+                        impact = shap_vals_row[features.index(feat)]
+                        direction = "increases" if impact > 0 else "decreases"
+                        reasons.append(f"• **{feat}** = {val} → {direction} risk by {abs(impact):.2f}")
+                    return "\n".join(reasons)
+                
+                # Map explanations back to full df (only where needed)
+                explanations = [""] * len(df_result)
+                review_indices = df_result.index[review_or_decline]
+                for idx, orig_idx in enumerate(review_indices):
+                    explanations[orig_idx] = get_top_reasons(shap_values_review[idx], X_review.iloc[idx])
+                
+                df_result['explanation'] = explanations
+            else:
+                df_result['explanation'] = ""
+                st.info("✅ All transactions auto-approved or low risk — no explanations needed.")
             
-            df_result['explanation'] = [get_top_reasons(i) for i in range(len(df_result))]
-            
-            # Display results
+            # Display main results (same beautiful layout)
             display_results(df_result)
             
-            # Individual explanations
-            st.markdown("---")
-            st.subheader("🔍 Click to View SHAP Explanation (Live Demo Only)")
-            for i, row in df_result.iterrows():
-                with st.expander(f"TX {i+1}: {row['customer_id']} | ${row['amount_usd']:.2f} | Score: {row['risk_score']}/999"):
-                    st.markdown(f"**Decision:** {row['decision']}")
-                    st.markdown("**Top Contributing Factors:**")
-                    st.markdown(row['explanation'], unsafe_allow_html=True)
-
+            # === Individual explanations ONLY for review/decline ===
+            if review_or_decline.any():
+                st.markdown("---")
+                st.subheader("🔍 SHAP Explanations (Only for Review/Decline Transactions)")
+                for i, row in df_result[review_or_decline].iterrows():
+                    with st.expander(f"TX {i+1}: {row['customer_id']} | ${row['amount_usd']:.2f} | Score: {row['risk_score']}/999 | {row['decision']}"):
+                        st.markdown(f"**Decision:** {row['decision']}")
+                        st.markdown("**Top Contributing Factors:**")
+                        st.markdown(row['explanation'], unsafe_allow_html=True)
+            else:
+                st.success("🎉 No transactions require manual review or decline — all low risk!")
 # -------------------------------
 # Upload CSV Mode (No explanations)
 # -------------------------------
