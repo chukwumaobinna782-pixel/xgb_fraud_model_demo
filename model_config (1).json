@@ -1,0 +1,41 @@
+{
+    "features": [
+        "amount_usd",
+        "dist_to_home_km",
+        "card_present",
+        "foreign_ip",
+        "risky_ip_country",
+        "uncommon_os",
+        "hour_of_day",
+        "day_of_week",
+        "weekend",
+        "merchant_category",
+        "device_os",
+        "device_lang",
+        "ip_country",
+        "ip_isp",
+        "cust_prev_tx",
+        "time_since_prev_tx_sec",
+        "very_quick_succession",
+        "amount_to_hist_avg_ratio",
+        "isp_fraud_rate",
+        "isp_tx_count",
+        "isp_unique_customers",
+        "dev_fraud_rate",
+        "dev_tx_count",
+        "dev_unique_customers",
+        "merchant_prev_count",
+        "merchant_prev_fraud_rate"
+    ],
+    "categorical_columns": [
+        "merchant_category",
+        "device_os",
+        "device_lang",
+        "ip_country",
+        "ip_isp",
+        "device_profile"
+    ],
+    "model_version": "enhanced_genai_group_risk_v1",
+    "training_date": "2025-12-24",
+    "notes": "Includes synthetic fraud via GAN + group risk features (ISP, device, merchant velocity)"
+}
