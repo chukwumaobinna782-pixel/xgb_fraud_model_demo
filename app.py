@@ -276,7 +276,7 @@ if mode == "Live Demo (Simulate Transactions)":
             time_deltas = np.cumsum(np.random.exponential(scale=15, size=num_tx))
             trans_ts = [base_time + timedelta(minutes=float(d)) for d in time_deltas]
             
-            is_fraud = np.random.choice([0, 1], num_tx, p=[0.98, 0.02])
+            is_fraud = np.random.choice([0, 1], num_tx, p=[0.98, 0.01])
             
             df_sim = pd.DataFrame({
                 'customer_id': customer_ids,
